@@ -1,8 +1,8 @@
 # PYMES Data Strategy - Backend
 
-ETL system with Human-in-the-Loop for AI-assisted data cleaning.
+Sistema ETL con Human-in-the-Loop para limpieza de datos asistida por IA.
 
-## Architecture
+## Arquitectura
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -30,51 +30,51 @@ ETL system with Human-in-the-Loop for AI-assisted data cleaning.
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-## Tech Stack
+## Stack Tecnológico
 
 ### API Gateway (Node.js)
-- **Express 4.21** - Web framework
-- **TypeScript 5.7** - Type safety
-- **Prisma 6.4** - Database ORM
-- **BullMQ 5.34** - Job queue producer
-- **Zod 3.24** - Schema validation
+- **Express 4.21** - Framework web
+- **TypeScript 5.7** - Tipado estático
+- **Prisma 6.4** - ORM para base de datos
+- **BullMQ 5.34** - Productor de cola de trabajos
+- **Zod 3.24** - Validación de esquemas
 
 ### Worker ETL (Python)
-- **FastAPI 0.115** - Web framework
-- **Polars 1.23** - High-performance data processing
-- **Pandas 2.2** - Data manipulation
-- **BullMQ 2.9** - Job queue consumer (Python binding)
-- **Pydantic 2.10** - Settings and validation
+- **FastAPI 0.115** - Framework web
+- **Polars 1.23** - Procesamiento de datos de alto rendimiento
+- **Pandas 2.2** - Manipulación de datos
+- **BullMQ 2.9** - Consumidor de cola de trabajos (binding Python)
+- **Pydantic 2.10** - Configuración y validación
 
-### Infrastructure
-- **PostgreSQL 16** - Relational database
-- **Redis 7.4** - Message broker (BullMQ)
-- **MinIO** - S3-compatible object storage
+### Infraestructura
+- **PostgreSQL 16** - Base de datos relacional
+- **Redis 7.4** - Broker de mensajes (BullMQ)
+- **MinIO** - Almacenamiento de objetos compatible con S3
 
-## Quick Start
+## Inicio Rápido
 
 ```bash
-# Start all services
+# Iniciar todos los servicios
 make up
 
-# Check status
+# Ver estado
 make ps
 
-# View logs
+# Ver logs
 make logs
 ```
 
-## Services
+## Servicios
 
-| Service   | URL                       | Description          |
-|-----------|---------------------------|----------------------|
-| API       | http://localhost:3000     | API Gateway          |
-| Worker    | http://localhost:8000     | Worker ETL           |
-| MinIO     | http://localhost:9001     | Storage Console      |
-| PostgreSQL| localhost:5433            | Database             |
-| Redis     | localhost:6380            | Message Broker       |
+| Servicio   | URL                       | Descripción              |
+|------------|---------------------------|--------------------------|
+| API        | http://localhost:3000     | API Gateway              |
+| Worker     | http://localhost:8000     | Worker ETL               |
+| MinIO      | http://localhost:9001     | Consola de almacenamiento|
+| PostgreSQL | localhost:5433            | Base de datos            |
+| Redis      | localhost:6380            | Broker de mensajes       |
 
-## Health Endpoints
+## Endpoints de Salud
 
 ```bash
 # API Gateway
@@ -82,70 +82,70 @@ curl http://localhost:3000/health
 
 # Worker ETL
 curl http://localhost:8000/health
-curl http://localhost:8000/health/live   # Liveness probe
-curl http://localhost:8000/health/ready  # Readiness probe
+curl http://localhost:8000/health/live   # Sonda de vida
+curl http://localhost:8000/health/ready  # Sonda de preparación
 ```
 
-## Development
+## Desarrollo
 
-### Local Development (without Docker)
+### Desarrollo Local (sin Docker)
 
 ```bash
-# Start infrastructure only
+# Iniciar solo infraestructura
 make up
 
-# Run API locally
+# Ejecutar API localmente
 make api-dev
 
-# Run Worker locally (requires uv)
+# Ejecutar Worker localmente (requiere uv)
 make worker-dev
 ```
 
-### Database
+### Base de Datos
 
 ```bash
-# Run migrations
+# Ejecutar migraciones
 make db-migrate
 
-# Open Prisma Studio
+# Abrir Prisma Studio
 make db-studio
 
-# Reset database (WARNING: data loss!)
+# Resetear base de datos (¡ADVERTENCIA: pérdida de datos!)
 make db-reset
 ```
 
-### Utilities
+### Utilidades
 
 ```bash
-# PostgreSQL CLI
+# CLI de PostgreSQL
 make psql
 
-# Redis CLI
+# CLI de Redis
 make redis-cli
 
-# Install dependencies
+# Instalar dependencias
 make install
 
-# Lint code
+# Lint del código
 make lint
 
-# Type check
+# Verificar tipos
 make typecheck
 ```
 
-## Project Structure
+## Estructura del Proyecto
 
 ```
 backend/
 ├── api/                      # API Gateway (Node.js)
 │   └── src/
-│       ├── domain/           # Business logic (hexagonal core)
+│       ├── domain/           # Lógica de negocio (núcleo hexagonal)
 │       │   ├── entities/
 │       │   ├── value-objects/
 │       │   ├── ports/
 │       │   └── errors/
-│       ├── application/      # Use cases and DTOs
-│       └── infrastructure/   # Adapters (HTTP, DB, Queue)
+│       ├── application/      # Casos de uso y DTOs
+│       └── infrastructure/   # Adaptadores (HTTP, BD, Cola)
 │           ├── config/
 │           ├── http/
 │           │   ├── controllers/
@@ -154,70 +154,75 @@ backend/
 │           └── persistence/
 ├── worker/                   # Worker ETL (Python)
 │   └── src/
-│       ├── domain/           # Business logic (hexagonal core)
+│       ├── domain/           # Lógica de negocio (núcleo hexagonal)
 │       │   ├── entities/
 │       │   ├── value_objects/
 │       │   ├── ports/
 │       │   └── errors/
-│       ├── application/      # Use cases and DTOs
-│       └── infrastructure/   # Adapters (HTTP, Storage, Queue)
+│       ├── application/      # Casos de uso y DTOs
+│       └── infrastructure/   # Adaptadores (HTTP, Almacenamiento, Cola)
 │           ├── config/
 │           ├── http/
 │           ├── messaging/
 │           └── storage/
-├── prisma/                   # Database schema and migrations
-├── docker/                   # Docker configurations
-├── openspec/                 # SDD artifacts
-├── docker-compose.yml        # Container orchestration
-├── Makefile                  # Development commands
-└── README.md                 # This file
+├── prisma/                   # Esquema de BD y migraciones
+├── docker/                   # Configuraciones Docker
+├── docs/                     # Documentación del proyecto
+├── openspec/                 # Artefactos SDD
+├── docker-compose.yml        # Orquestación de contenedores
+├── Makefile                  # Comandos de desarrollo
+└── README.md                 # Este archivo
 ```
 
-## Environment Variables
+## Variables de Entorno
 
-Copy `.env.example` to `.env`:
+Copiar `.env.example` a `.env`:
 
 ```bash
 cp .env.example .env
 ```
 
-Key variables:
-- `POSTGRES_PORT=5433` - PostgreSQL port (avoids conflicts)
-- `REDIS_PORT=6380` - Redis port (avoids conflicts)
-- `API_PORT=3000` - API Gateway port
-- `WORKER_PORT=8000` - Worker ETL port
+Variables principales:
+- `POSTGRES_PORT=5433` - Puerto de PostgreSQL (evita conflictos)
+- `REDIS_PORT=6380` - Puerto de Redis (evita conflictos)
+- `API_PORT=3000` - Puerto del API Gateway
+- `WORKER_PORT=8000` - Puerto del Worker ETL
 
-## Architecture Decisions
+## Decisiones de Arquitectura
 
-See `openspec/` for full design documents. Key decisions:
+Ver `openspec/` para documentos de diseño completos. Decisiones clave:
 
-1. **ADR-001: PostgreSQL + JSONB over MongoDB** - Simplified stack, JSONB handles document needs
-2. **ADR-002: BullMQ for messaging** - Works in both Node.js and Python
-3. **Hexagonal Architecture** - Clean separation of domain, application, and infrastructure
+1. **ADR-001: PostgreSQL + JSONB sobre MongoDB** - Stack simplificado, JSONB maneja necesidades de documentos
+2. **ADR-002: BullMQ para mensajería** - Funciona tanto en Node.js como en Python
+3. **Arquitectura Hexagonal** - Separación limpia entre dominio, aplicación e infraestructura
 
-## Troubleshooting
+## Solución de Problemas
 
-### Port conflicts
-If ports 5432 or 6379 are in use, the default `.env` uses alternate ports (5433, 6380).
+### Conflictos de puertos
+Si los puertos 5432 o 6379 están en uso, el `.env` por defecto usa puertos alternativos (5433, 6380).
 
-### Docker issues
+### Problemas con Docker
 ```bash
-# Remove all containers and volumes
+# Eliminar todos los contenedores y volúmenes
 make clean
 
-# Rebuild images
+# Reconstruir imágenes
 docker compose build --no-cache
 ```
 
-### Prisma issues
+### Problemas con Prisma
 ```bash
-# Regenerate client
+# Regenerar cliente
 make db-generate
 
-# View current database state
+# Ver estado actual de la BD
 make db-studio
 ```
 
-## License
+## Documentación Adicional
+
+Para un resumen completo del proyecto en lenguaje natural, ver `docs/RESUMEN-PROYECTO.md`.
+
+## Licencia
 
 MIT
