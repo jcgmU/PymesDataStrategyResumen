@@ -1,0 +1,35 @@
+# Development Dockerfile for API Gateway
+# Build context should be the root of the monorepo (backend/)
+# docker build -f api/Dockerfile.dev -t pymes-api .
+
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+# Copy workspace config (from root context)
+COPY package.json pnpm-workspace.yaml ./
+
+# Copy API package files
+COPY api/package.json api/
+
+# Copy Prisma schema
+COPY prisma/ prisma/
+
+# Install dependencies
+WORKDIR /app/api
+RUN pnpm install
+
+# Generate Prisma client
+RUN pnpm exec prisma generate --schema=../prisma/schema.prisma
+
+# Copy API source code
+COPY api/ .
+
+# Expose port
+EXPOSE 3000
+
+# Start development server with hot reload
+CMD ["pnpm", "dev"]

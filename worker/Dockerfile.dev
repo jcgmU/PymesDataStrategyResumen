@@ -1,0 +1,35 @@
+# Development Dockerfile for Worker ETL
+# Build context should be the root of the monorepo (backend/)
+# docker build -f worker/Dockerfile.dev -t pymes-worker .
+
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv for fast package management
+RUN pip install uv
+
+# Copy dependency files and README (required by hatchling)
+COPY worker/pyproject.toml worker/.python-version worker/README.md ./
+
+# Install dependencies
+RUN uv sync --frozen --no-dev || uv sync --no-dev
+
+# Copy source code
+COPY worker/src ./src
+
+# Set Python path
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+
+# Expose port
+EXPOSE 8000
+
+# Start development server with hot reload
+CMD ["uv", "run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

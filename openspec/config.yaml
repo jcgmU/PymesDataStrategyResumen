@@ -1,0 +1,75 @@
+# openspec/config.yaml
+# Spec-Driven Development configuration for PYMES Data Strategy Backend
+
+schema: spec-driven
+
+context: |
+  Project: PYMES Data Strategy - Backend ETL System
+  Architecture: Hexagonal (Ports & Adapters), Monorepo
+  API Gateway: Node.js + Express + TypeScript + Zod + Prisma
+  Worker ETL: Python + FastAPI + Polars/Pandas + BullMQ
+  Messaging: Redis (BullMQ job queues)
+  Persistence: PostgreSQL (relational), MongoDB (documents), S3/MinIO (blobs)
+  Pattern: Human-in-the-Loop ETL with AI-suggested transformations
+
+stack:
+  api:
+    runtime: node
+    version: "20"
+    framework: express
+    language: typescript
+    package_manager: pnpm
+    orm: prisma
+    validation: zod
+    messaging: bullmq
+  worker:
+    runtime: python
+    version: "3.12"
+    framework: fastapi
+    package_manager: uv
+    dataframes: [polars, pandas]
+    messaging: bullmq
+  infrastructure:
+    broker: redis
+    relational_db: postgresql
+    document_db: mongodb
+    blob_storage: minio
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+    - Identify affected modules across api/ and worker/
+    - Consider impact on Redis message contracts
+  specs:
+    - Use Given/When/Then format for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+    - Specify both success and failure scenarios
+  design:
+    - Document architecture decisions with ADR format
+    - Include sequence diagrams for cross-service flows
+    - Specify Redis message schemas explicitly
+  tasks:
+    - Group by phase (infrastructure, api, worker, integration)
+    - Use hierarchical numbering (1.1, 1.2, etc.)
+    - Mark dependencies between api and worker tasks
+  apply:
+    - Follow hexagonal architecture layers strictly
+    - Load typescript skill for Node.js code
+    - Load pytest skill for Python tests
+    - Use Context7 for Express, Prisma, FastAPI, Polars docs
+  verify:
+    - Run tests: pnpm test (api), uv run pytest (worker)
+    - Verify Redis contract compatibility between services
+    - Check Prisma migrations are in sync
+  archive:
+    - Warn before merging destructive deltas
+    - Update both api/ and worker/ specs if cross-cutting
+
+tdd:
+  enabled: false  # Enable when test infrastructure is ready
+  api:
+    test_command: "pnpm test"
+    build_command: "pnpm build"
+  worker:
+    test_command: "uv run pytest"
+    build_command: "uv run python -m py_compile src/**/*.py"
