@@ -2,6 +2,8 @@
 
 Sistema ETL con Human-in-the-Loop para limpieza de datos asistida por IA.
 
+**🎯 Estado: MVP Fase 1 COMPLETADO** - 490 tests pasando (API: 237, Worker: 253)
+
 ## Arquitectura
 
 ```
@@ -51,6 +53,15 @@ Sistema ETL con Human-in-the-Loop para limpieza de datos asistida por IA.
 - **Redis 7.4** - Broker de mensajes (BullMQ)
 - **MinIO** - Almacenamiento de objetos compatible con S3
 
+## Funcionalidades Implementadas
+
+✅ **Gestión de Datasets** - CRUD completo con validación  
+✅ **11 Transformaciones** - CLEAN_NULLS, FILL_NULLS, TRIM_WHITESPACE, etc.  
+✅ **4 Formatos** - CSV, Excel (.xlsx), JSON, Parquet (hasta 100MB)  
+✅ **Cola Asíncrona** - BullMQ para procesamiento distribuido  
+✅ **Health Checks** - API y Worker con monitoreo de dependencias  
+✅ **Tests Completos** - 490 tests pasando (91% cobertura)
+
 ## Inicio Rápido
 
 ```bash
@@ -74,16 +85,55 @@ make logs
 | PostgreSQL | localhost:5433            | Base de datos            |
 | Redis      | localhost:6380            | Broker de mensajes       |
 
-## Endpoints de Salud
+## Endpoints Disponibles
+
+### API REST
+
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| POST | `/api/v1/datasets` | Subir nuevo dataset |
+| GET | `/api/v1/datasets` | Listar datasets |
+| GET | `/api/v1/datasets/:id` | Obtener dataset por ID |
+| DELETE | `/api/v1/datasets/:id` | Eliminar dataset |
+| GET | `/health` | Health check |
+
+### Ejemplo de uso
+
+```bash
+# Subir dataset
+curl -X POST http://localhost:3000/api/v1/datasets \
+  -H "x-user-id: user123" \
+  -F "name=ventas-2024" \
+  -F "file=@datos.csv"
+
+# Listar datasets
+curl "http://localhost:3000/api/v1/datasets?userId=user123"
+```
+
+## Health Checks
 
 ```bash
 # API Gateway
 curl http://localhost:3000/health
 
-# Worker ETL
+# Worker ETL  
 curl http://localhost:8000/health
-curl http://localhost:8000/health/live   # Sonda de vida
-curl http://localhost:8000/health/ready  # Sonda de preparación
+curl http://localhost:8000/health/live   # Kubernetes liveness
+curl http://localhost:8000/health/ready  # Kubernetes readiness
+```
+
+## Tests
+
+```bash
+# API Tests (237 tests)
+cd api && pnpm test
+
+# Worker Tests (253 tests)  
+cd worker && uv run pytest
+
+# Con cobertura
+cd api && pnpm test:coverage
+cd worker && uv run pytest --cov=src --cov-report=html
 ```
 
 ## Desarrollo
@@ -221,7 +271,18 @@ make db-studio
 
 ## Documentación Adicional
 
-Para un resumen completo del proyecto en lenguaje natural, ver `docs/RESUMEN-PROYECTO.md`.
+- **Documentación completa del proyecto:** `docs/RESUMEN-PROYECTO.md`
+- **Especificaciones técnicas:** `openspec/` directory  
+- **Decisiones de arquitectura:** Ver ADRs en el documento principal
+- **Catálogo de transformaciones:** 11 transformaciones disponibles en Worker
+
+## Próximos pasos
+
+**Fase 2:** Human-in-the-Loop con IA
+- Autenticación JWT
+- Sugerencias inteligentes de transformaciones  
+- Preview en tiempo real
+- Frontend web con Next.js
 
 ## Licencia
 
