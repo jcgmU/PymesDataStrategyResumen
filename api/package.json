@@ -19,31 +19,34 @@
     "test:ui": "vitest --ui"
   },
   "dependencies": {
-    "express": "4.21.2",
-    "zod": "3.24.2",
-    "bullmq": "5.34.8",
-    "ioredis": "5.4.2",
     "@prisma/client": "6.4.1",
-    "dotenv": "16.4.7",
-    "helmet": "8.0.0",
+    "bullmq": "5.34.8",
     "cors": "2.8.5",
+    "dotenv": "16.4.7",
+    "express": "4.21.2",
+    "helmet": "8.0.0",
+    "ioredis": "5.4.2",
     "pino": "9.6.0",
-    "pino-http": "10.4.0"
+    "pino-http": "10.4.0",
+    "zod": "3.24.2"
   },
   "devDependencies": {
-    "@types/express": "5.0.0",
-    "@types/cors": "2.8.17",
-    "@types/node": "22.13.5",
-    "typescript": "5.7.3",
-    "prisma": "6.4.1",
-    "eslint": "9.21.0",
     "@eslint/js": "9.21.0",
-    "typescript-eslint": "8.24.1",
-    "prettier": "3.5.2",
-    "nodemon": "3.1.9",
-    "tsx": "4.19.2",
-    "vitest": "^2.1.0",
+    "@testcontainers/postgresql": "^11.12.0",
+    "@testcontainers/redis": "^11.12.0",
+    "@types/cors": "2.8.17",
+    "@types/express": "5.0.0",
+    "@types/node": "22.13.5",
     "@vitest/coverage-v8": "^2.1.0",
-    "@vitest/ui": "^2.1.0"
+    "@vitest/ui": "^2.1.0",
+    "eslint": "9.21.0",
+    "nodemon": "3.1.9",
+    "prettier": "3.5.2",
+    "prisma": "6.4.1",
+    "testcontainers": "^11.12.0",
+    "tsx": "4.19.2",
+    "typescript": "5.7.3",
+    "typescript-eslint": "8.24.1",
+    "vitest": "^2.1.0"
   }
 }

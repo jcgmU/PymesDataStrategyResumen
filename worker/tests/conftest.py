@@ -1,5 +1,10 @@
 """Pytest configuration and fixtures for Worker tests."""
 
+# Import container fixtures for integration tests
+pytest_plugins = [
+    "tests.fixtures.containers",
+]
+
 from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4

@@ -5,7 +5,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['src/**/*.{test,spec}.ts'],
+    include: ['src/**/*.{test,spec}.ts', 'tests/**/*.{test,spec}.ts'],
     exclude: ['**/node_modules/**', '**/dist/**'],
 
     coverage: {
@@ -31,8 +31,8 @@ export default defineConfig({
     restoreMocks: true,
     mockReset: true,
 
-    testTimeout: 10000,
-    hookTimeout: 10000,
+    testTimeout: 60000,
+    hookTimeout: 60000,
   },
 
   resolve: {
