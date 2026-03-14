@@ -10,6 +10,7 @@ describe('env', () => {
     process.env = {
       ...originalEnv,
       DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
+      JWT_SECRET: 'test-secret-key-for-testing',
     };
   });
 
@@ -155,6 +156,7 @@ describe('env', () => {
         process.env = {
           ...originalEnv,
           DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
+          JWT_SECRET: 'test-secret-key-for-testing',
           LOG_LEVEL: level,
         };
         const { loadEnv } = await import('../env.js');

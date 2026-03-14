@@ -6,8 +6,19 @@ import { MinioStorageService } from '../storage/MinioStorageService.js';
 import type { StorageService } from '../../domain/ports/services/StorageService.js';
 import { PrismaDatasetRepository } from '../persistence/repositories/PrismaDatasetRepository.js';
 import type { DatasetRepository } from '../../domain/ports/repositories/DatasetRepository.js';
+import { PrismaAnomalyRepository } from '../persistence/repositories/PrismaAnomalyRepository.js';
+import type { AnomalyRepository } from '../../domain/ports/repositories/AnomalyRepository.js';
+import { PrismaUserRepository } from '../persistence/repositories/PrismaUserRepository.js';
+import type { UserRepository } from '../../domain/ports/repositories/UserRepository.js';
+import { PrismaStatsRepository } from '../persistence/repositories/PrismaStatsRepository.js';
+import type { IStatsRepository } from '../../domain/ports/repositories/StatsRepository.js';
 import { BullMQJobQueueService } from '../messaging/bullmq/BullMQJobQueueService.js';
 import type { JobQueueService } from '../../domain/ports/services/JobQueueService.js';
+import { BullMQQueueEvents } from '../messaging/bullmq/BullMQQueueEvents.js';
+import { JwtServiceAdapter } from '../auth/JwtServiceAdapter.js';
+import type { IJwtService } from '../../domain/ports/services/JwtService.js';
+import { BcryptPasswordService } from '../auth/BcryptPasswordService.js';
+import type { IPasswordService } from '../../domain/ports/services/PasswordService.js';
 
 /**
  * Simple dependency injection container.
@@ -18,7 +29,13 @@ export class Container {
   private redisInstance: Redis | null = null;
   private storageInstance: StorageService | null = null;
   private datasetRepositoryInstance: DatasetRepository | null = null;
+  private anomalyRepositoryInstance: AnomalyRepository | null = null;
+  private userRepositoryInstance: UserRepository | null = null;
+  private statsRepositoryInstance: IStatsRepository | null = null;
   private jobQueueInstance: JobQueueService | null = null;
+  private queueEventsInstance: BullMQQueueEvents | null = null;
+  private jwtServiceInstance: IJwtService | null = null;
+  private passwordServiceInstance: IPasswordService | null = null;
 
   constructor() {
     this.env = getEnv();
@@ -67,6 +84,44 @@ export class Container {
     return this.datasetRepositoryInstance;
   }
 
+  get anomalyRepository(): AnomalyRepository {
+    if (this.anomalyRepositoryInstance === null) {
+      this.anomalyRepositoryInstance = new PrismaAnomalyRepository(this.prisma);
+    }
+    return this.anomalyRepositoryInstance;
+  }
+
+  get userRepository(): UserRepository {
+    if (this.userRepositoryInstance === null) {
+      this.userRepositoryInstance = new PrismaUserRepository(this.prisma);
+    }
+    return this.userRepositoryInstance;
+  }
+
+  get statsRepository(): IStatsRepository {
+    if (this.statsRepositoryInstance === null) {
+      this.statsRepositoryInstance = new PrismaStatsRepository(this.prisma);
+    }
+    return this.statsRepositoryInstance;
+  }
+
+  get jwtService(): IJwtService {
+    if (this.jwtServiceInstance === null) {
+      this.jwtServiceInstance = new JwtServiceAdapter(
+        this.env.JWT_SECRET,
+        this.env.JWT_EXPIRES_IN
+      );
+    }
+    return this.jwtServiceInstance;
+  }
+
+  get passwordService(): IPasswordService {
+    if (this.passwordServiceInstance === null) {
+      this.passwordServiceInstance = new BcryptPasswordService();
+    }
+    return this.passwordServiceInstance;
+  }
+
   get jobQueue(): JobQueueService {
     if (this.jobQueueInstance === null) {
       this.jobQueueInstance = new BullMQJobQueueService({
@@ -74,6 +129,20 @@ export class Container {
       });
     }
     return this.jobQueueInstance;
+  }
+
+  get queueEvents(): BullMQQueueEvents {
+    if (this.queueEventsInstance === null) {
+      // QueueEvents requires its own dedicated Redis connection
+      const redisForEvents = new Redis({
+        host: this.env.REDIS_HOST,
+        port: this.env.REDIS_PORT,
+        maxRetriesPerRequest: null,
+        enableReadyCheck: false,
+      });
+      this.queueEventsInstance = new BullMQQueueEvents(redisForEvents);
+    }
+    return this.queueEventsInstance;
   }
 
   /**
@@ -115,6 +184,10 @@ export class Container {
    * Gracefully shutdown all connections.
    */
   async shutdown(): Promise<void> {
+    if (this.queueEventsInstance !== null) {
+      await this.queueEventsInstance.close();
+      this.queueEventsInstance = null;
+    }
     if (this.jobQueueInstance !== null) {
       const bullmqService = this.jobQueueInstance as BullMQJobQueueService;
       await bullmqService.close();

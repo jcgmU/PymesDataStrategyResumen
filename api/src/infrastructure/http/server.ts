@@ -1,15 +1,34 @@
 import express, { type Express } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import swaggerUi from 'swagger-ui-express';
 import type { Container } from '../config/container.js';
 import { createRoutes } from './routes/index.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { swaggerSpec, swaggerUiOptions } from './swagger.js';
 
 /**
  * Create and configure the Express application.
  */
 export function createServer(container: Container): Express {
   const app = express();
+
+  // Swagger UI — must be mounted before helmet so we can relax CSP for its inline assets
+  app.use(
+    '/api/docs',
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'", "'unsafe-inline'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          imgSrc: ["'self'", 'data:', 'https:'],
+        },
+      },
+    }),
+    swaggerUi.serve,
+    swaggerUi.setup(swaggerSpec, swaggerUiOptions)
+  );
 
   // Middleware
   app.use(helmet());

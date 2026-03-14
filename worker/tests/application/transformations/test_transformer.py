@@ -585,3 +585,344 @@ class TestErrorHandling:
         
         assert result.rows_before == 4
         assert result.rows_after == 1
+
+
+# =============================================================================
+# Normalize Dates Tests
+# =============================================================================
+
+
+class TestNormalizeDates:
+    """Tests for NORMALIZE_DATES transformation."""
+
+    def test_normalize_iso_dates(self, transformer):
+        """Should leave ISO-8601 dates unchanged (string representation)."""
+        df = pl.DataFrame({"date": ["2024-01-15", "2024-06-30", "2023-12-01"]})
+        config = TransformationConfig(type=TransformationType.NORMALIZE_DATES)
+
+        result_df, result = transformer.transform(df, config)
+
+        assert result.success is True
+        # Values should remain as ISO strings
+        for val in result_df["date"].to_list():
+            assert val is not None
+            # YYYY-MM-DD pattern
+            parts = val.split("-")
+            assert len(parts) == 3
+
+    def test_normalize_dd_mm_yyyy(self, transformer):
+        """Should normalize DD/MM/YYYY to ISO-8601."""
+        df = pl.DataFrame({"created_at": ["15/01/2024", "30/06/2024"]})
+        config = TransformationConfig(
+            type=TransformationType.NORMALIZE_DATES,
+            columns=["created_at"],
+            params={"format": "%d/%m/%Y"},
+        )
+
+        result_df, result = transformer.transform(df, config)
+
+        assert result.success is True
+        assert result_df["created_at"].to_list() == ["2024-01-15", "2024-06-30"]
+
+    def test_normalize_skips_non_parseable(self, transformer):
+        """Should skip columns that cannot be parsed (non-strict mode)."""
+        df = pl.DataFrame({"text": ["hello", "world"], "date": ["2024-01-01", "2024-02-01"]})
+        config = TransformationConfig(
+            type=TransformationType.NORMALIZE_DATES,
+            params={"strict": False},
+        )
+
+        result_df, result = transformer.transform(df, config)
+
+        assert result.success is True
+        # text column should be skipped (not parseable as date)
+        assert result.details["skipped"] == ["text"] or "text" in result.details.get("skipped", [])
+
+    def test_normalize_dates_only_specified_columns(self, transformer):
+        """Should only normalise the specified column."""
+        df = pl.DataFrame({"date1": ["2024-01-01"], "date2": ["01/02/2024"]})
+        config = TransformationConfig(
+            type=TransformationType.NORMALIZE_DATES,
+            columns=["date2"],
+            params={"format": "%d/%m/%Y"},
+        )
+
+        result_df, result = transformer.transform(df, config)
+
+        assert result.success is True
+        assert result.columns_affected == ["date2"]
+        # date1 unchanged
+        assert result_df["date1"][0] == "2024-01-01"
+
+
+# =============================================================================
+# Validate Types Tests
+# =============================================================================
+
+
+class TestValidateTypes:
+    """Tests for VALIDATE_TYPES transformation."""
+
+    def test_validate_matching_types(self, transformer, sample_df):
+        """Should pass when all types match expectations."""
+        config = TransformationConfig(
+            type=TransformationType.VALIDATE_TYPES,
+            params={"expected_types": {"name": "str", "age": "int", "score": "float"}},
+        )
+
+        result_df, result = transformer.transform(sample_df, config)
+
+        assert result.success is True
+        assert result_df.equals(sample_df)  # DataFrame unchanged
+        assert result.details["passed"] is True
+        assert result.details["mismatches"] == {}
+
+    def test_validate_mismatched_types_non_strict(self, transformer, sample_df):
+        """Should report mismatches without raising in non-strict mode."""
+        config = TransformationConfig(
+            type=TransformationType.VALIDATE_TYPES,
+            params={
+                "expected_types": {"age": "str"},  # age is Int64, not str
+                "strict": False,
+            },
+        )
+
+        result_df, result = transformer.transform(sample_df, config)
+
+        assert result.success is True  # non-strict: no exception
+        assert result.details["passed"] is False
+        assert "age" in result.details["mismatches"]
+
+    def test_validate_mismatched_types_strict(self, transformer, sample_df):
+        """Should fail when strict=True and types mismatch."""
+        config = TransformationConfig(
+            type=TransformationType.VALIDATE_TYPES,
+            params={
+                "expected_types": {"age": "str"},
+                "strict": True,
+            },
+        )
+
+        result_df, result = transformer.transform(sample_df, config)
+
+        assert result.success is False
+
+    def test_validate_missing_expected_types_param(self, transformer, sample_df):
+        """Should fail if expected_types param not provided."""
+        config = TransformationConfig(
+            type=TransformationType.VALIDATE_TYPES,
+            params={},
+        )
+
+        result_df, result = transformer.transform(sample_df, config)
+
+        assert result.success is False
+
+    def test_validate_missing_column_reported_as_mismatch(self, transformer, sample_df):
+        """Should report a missing column as a mismatch."""
+        config = TransformationConfig(
+            type=TransformationType.VALIDATE_TYPES,
+            params={"expected_types": {"nonexistent_col": "str"}},
+        )
+
+        result_df, result = transformer.transform(sample_df, config)
+
+        assert result.success is True
+        assert "nonexistent_col" in result.details["mismatches"]
+        assert result.details["mismatches"]["nonexistent_col"]["actual"] == "COLUMN_MISSING"
+
+
+# =============================================================================
+# Detect Outliers Tests
+# =============================================================================
+
+
+class TestDetectOutliers:
+    """Tests for DETECT_OUTLIERS transformation."""
+
+    @pytest.fixture
+    def df_with_outliers(self):
+        """DataFrame with a clear outlier."""
+        return pl.DataFrame({
+            "value": [10, 11, 12, 10, 11, 1000],  # 1000 is an outlier
+            "name": ["a", "b", "c", "d", "e", "f"],
+        })
+
+    def test_flag_outliers_iqr(self, transformer, df_with_outliers):
+        """Should flag outlier rows using IQR method."""
+        config = TransformationConfig(
+            type=TransformationType.DETECT_OUTLIERS,
+            columns=["value"],
+            params={"method": "iqr", "action": "flag"},
+        )
+
+        result_df, result = transformer.transform(df_with_outliers, config)
+
+        assert result.success is True
+        # Original rows preserved
+        assert result_df.height == 6
+        # Flag column added
+        assert "value_outlier" in result_df.columns
+        # The extreme value should be flagged
+        flags = result_df["value_outlier"].to_list()
+        assert flags[-1] is True  # last row (1000) is the outlier
+
+    def test_remove_outliers_iqr(self, transformer, df_with_outliers):
+        """Should remove outlier rows using IQR method."""
+        config = TransformationConfig(
+            type=TransformationType.DETECT_OUTLIERS,
+            columns=["value"],
+            params={"method": "iqr", "action": "remove"},
+        )
+
+        result_df, result = transformer.transform(df_with_outliers, config)
+
+        assert result.success is True
+        assert result_df.height == 5  # outlier row removed
+        assert result.details["rows_removed"] == 1
+
+    def test_flag_outliers_zscore(self, transformer, df_with_outliers):
+        """Should flag outlier rows using Z-score method."""
+        config = TransformationConfig(
+            type=TransformationType.DETECT_OUTLIERS,
+            columns=["value"],
+            params={"method": "zscore", "threshold": 2.0, "action": "flag"},
+        )
+
+        result_df, result = transformer.transform(df_with_outliers, config)
+
+        assert result.success is True
+        assert "value_outlier" in result_df.columns
+
+    def test_no_numeric_columns(self, transformer):
+        """Should return unchanged DF when no numeric columns exist."""
+        df = pl.DataFrame({"name": ["alice", "bob"]})
+        config = TransformationConfig(
+            type=TransformationType.DETECT_OUTLIERS,
+            params={"action": "flag"},
+        )
+
+        result_df, result = transformer.transform(df, config)
+
+        assert result.success is True
+        assert result_df.equals(df)
+
+    def test_custom_flag_column_suffix(self, transformer, df_with_outliers):
+        """Should use custom flag column suffix."""
+        config = TransformationConfig(
+            type=TransformationType.DETECT_OUTLIERS,
+            columns=["value"],
+            params={"action": "flag", "flag_column": "_is_outlier"},
+        )
+
+        result_df, result = transformer.transform(df_with_outliers, config)
+
+        assert result.success is True
+        assert "value_is_outlier" in result_df.columns
+
+
+# =============================================================================
+# Encode Categoricals Tests
+# =============================================================================
+
+
+class TestEncodeCategoricals:
+    """Tests for ENCODE_CATEGORICALS transformation."""
+
+    @pytest.fixture
+    def df_categoricals(self):
+        return pl.DataFrame({
+            "color": ["red", "blue", "red", "green"],
+            "size": ["S", "M", "L", "M"],
+            "count": [1, 2, 3, 4],
+        })
+
+    def test_label_encoding(self, transformer, df_categoricals):
+        """Should replace string values with integer codes."""
+        config = TransformationConfig(
+            type=TransformationType.ENCODE_CATEGORICALS,
+            columns=["color"],
+            params={"encoding": "label"},
+        )
+
+        result_df, result = transformer.transform(df_categoricals, config)
+
+        assert result.success is True
+        assert result_df["color"].dtype == pl.Int32
+        # Numeric codes should be consistent
+        reds = result_df.filter(pl.col("color") == result_df["color"][0])["color"]
+        assert reds.n_unique() == 1  # all "red" mapped to same code
+
+    def test_label_encoding_category_map_in_details(self, transformer, df_categoricals):
+        """Details should include the category→integer mapping."""
+        config = TransformationConfig(
+            type=TransformationType.ENCODE_CATEGORICALS,
+            columns=["color"],
+            params={"encoding": "label"},
+        )
+
+        _, result = transformer.transform(df_categoricals, config)
+
+        assert "color" in result.details["category_maps"]
+        cmap = result.details["category_maps"]["color"]
+        assert "red" in cmap
+        assert "blue" in cmap
+        assert "green" in cmap
+
+    def test_onehot_encoding(self, transformer, df_categoricals):
+        """Should expand string column into binary dummy columns."""
+        config = TransformationConfig(
+            type=TransformationType.ENCODE_CATEGORICALS,
+            columns=["color"],
+            params={"encoding": "onehot"},
+        )
+
+        result_df, result = transformer.transform(df_categoricals, config)
+
+        assert result.success is True
+        # Original column dropped, dummy columns added
+        assert "color" not in result_df.columns
+        assert "color_red" in result_df.columns
+        assert "color_blue" in result_df.columns
+        assert "color_green" in result_df.columns
+
+    def test_onehot_encoding_drop_first(self, transformer, df_categoricals):
+        """Should drop first dummy to avoid multicollinearity."""
+        config = TransformationConfig(
+            type=TransformationType.ENCODE_CATEGORICALS,
+            columns=["color"],
+            params={"encoding": "onehot", "drop_first": True},
+        )
+
+        result_df, result = transformer.transform(df_categoricals, config)
+
+        assert result.success is True
+        # Should have 2 dummy columns instead of 3 (blue dropped as first alphabetically)
+        dummy_cols = [c for c in result_df.columns if c.startswith("color_")]
+        assert len(dummy_cols) == 2
+
+    def test_encoding_leaves_numeric_columns_unchanged(self, transformer, df_categoricals):
+        """Should not touch numeric columns when encoding all string columns."""
+        config = TransformationConfig(
+            type=TransformationType.ENCODE_CATEGORICALS,
+            params={"encoding": "label"},
+        )
+
+        result_df, result = transformer.transform(df_categoricals, config)
+
+        assert result.success is True
+        # count column (Int64) should be unchanged
+        assert result_df["count"].to_list() == [1, 2, 3, 4]
+
+    def test_no_string_columns(self, transformer):
+        """Should return unchanged DF when no string columns exist."""
+        df = pl.DataFrame({"x": [1, 2, 3]})
+        config = TransformationConfig(
+            type=TransformationType.ENCODE_CATEGORICALS,
+            params={"encoding": "label"},
+        )
+
+        result_df, result = transformer.transform(df, config)
+
+        assert result.success is True
+        assert result_df.equals(df)

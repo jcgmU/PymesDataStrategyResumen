@@ -5,11 +5,14 @@ from typing import TYPE_CHECKING, Any
 
 import redis.asyncio as aioredis
 import structlog
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, AsyncSession
 
 from src.application.transformations import DataTransformer
 from src.application.use_cases.process_dataset import ProcessDatasetUseCase
 from src.infrastructure.config.settings import Settings, get_settings
 from src.infrastructure.parsers.dataset_parser import DatasetParser
+from src.infrastructure.persistence.database import create_engine, create_session_factory
+from src.infrastructure.persistence.sqlalchemy_job_repository import SQLAlchemyJobRepository
 from src.infrastructure.storage.minio_storage_service import MinioStorageService
 
 if TYPE_CHECKING:
@@ -29,6 +32,9 @@ class Container:
     _parser: DatasetParser | None = field(default=None, repr=False)
     _transformer: DataTransformer | None = field(default=None, repr=False)
     _process_dataset_use_case: ProcessDatasetUseCase | None = field(default=None, repr=False)
+    _db_engine: AsyncEngine | None = field(default=None, repr=False)
+    _session_factory: async_sessionmaker[AsyncSession] | None = field(default=None, repr=False)
+    _job_repository: SQLAlchemyJobRepository | None = field(default=None, repr=False)
 
     @property
     def storage(self) -> MinioStorageService:
@@ -52,6 +58,27 @@ class Container:
         return self._transformer
 
     @property
+    def db_engine(self) -> AsyncEngine:
+        """Get the async database engine (lazy initialization)."""
+        if self._db_engine is None:
+            self._db_engine = create_engine(self.settings.database_url)
+        return self._db_engine
+
+    @property
+    def session_factory(self) -> async_sessionmaker[AsyncSession]:
+        """Get the async session factory (lazy initialization)."""
+        if self._session_factory is None:
+            self._session_factory = create_session_factory(self.db_engine)
+        return self._session_factory
+
+    @property
+    def job_repository(self) -> SQLAlchemyJobRepository:
+        """Get the job repository (lazy initialization)."""
+        if self._job_repository is None:
+            self._job_repository = SQLAlchemyJobRepository(self.session_factory)
+        return self._job_repository
+
+    @property
     def process_dataset_use_case(self) -> ProcessDatasetUseCase:
         """Get ProcessDataset use case (lazy initialization)."""
         if self._process_dataset_use_case is None:
@@ -60,6 +87,7 @@ class Container:
                 parser=self.parser,
                 transformer=self.transformer,
                 output_bucket=self.settings.minio_processed_bucket,
+                job_repository=self.job_repository,
             )
         return self._process_dataset_use_case
 
@@ -90,6 +118,10 @@ class Container:
         except AttributeError:
             # Fallback for older redis versions
             await self.redis_client.close()
+        # Close the DB engine if it was initialized
+        if self._db_engine is not None:
+            await self._db_engine.dispose()
+            self._db_engine = None
 
 
 _container: Container | None = None

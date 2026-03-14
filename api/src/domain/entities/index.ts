@@ -6,3 +6,12 @@ export {
   type TransformationType,
   type JobStatus,
 } from './TransformationJob.js';
+export {
+  Anomaly,
+  type AnomalyProps,
+  type AnomalyType,
+  type AnomalyStatus,
+  type AnomalyDecision,
+  type DecisionAction,
+} from './Anomaly.js';
+

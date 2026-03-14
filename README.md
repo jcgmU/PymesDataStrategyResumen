@@ -1,163 +1,204 @@
 # PymesDataStrategyBackEnd
 
-Sistema ETL con Human-in-the-Loop para limpieza de datos asistida por IA.
+Sistema ETL con Human-in-the-Loop para limpieza de datos asistida por IA, orientado a PyMEs (Bogotá).
 
-**Repositorio:** https://github.com/jcgmU/PymesDataStrategyBackEnd.git
+**Repositorio:** https://github.com/jcgmU/PymesDataStrategyBackEnd.git  
+**Código académico:** GIIS SW-005
 
-**🎯 Estado: MVP Fase 1 COMPLETADO** - 493 tests pasando (API: 240, Worker: 253)
+**Estado: Fase 3 COMPLETA** — ~842 tests pasando (API: ~337, Worker: 308, Frontend: 197 + 4 E2E)
 
 ## Arquitectura
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         PYMES Backend                           │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ┌─────────────┐    BullMQ     ┌─────────────┐                 │
-│  │ API Gateway │──────────────▶│ Worker ETL  │                 │
-│  │   (Node.js) │               │   (Python)  │                 │
-│  │   :3000     │               │   :8000     │                 │
-│  └──────┬──────┘               └──────┬──────┘                 │
-│         │                             │                         │
-│         │ Prisma                      │ SQLAlchemy              │
-│         │                             │                         │
-│  ┌──────┴──────┐               ┌──────┴──────┐                 │
-│  │ PostgreSQL  │               │    MinIO    │                 │
-│  │   :5433     │               │   :9000     │                 │
-│  └─────────────┘               └─────────────┘                 │
-│                                                                 │
-│                    ┌─────────────┐                              │
-│                    │    Redis    │                              │
-│                    │   :6380     │                              │
-│                    └─────────────┘                              │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                          PYMES Platform                              │
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  ┌──────────────┐   NextAuth v5   ┌──────────────┐                  │
+│  │  Frontend    │────────────────▶│ API Gateway  │                  │
+│  │  (Next.js)   │                 │  (Node.js)   │                  │
+│  │   :3001      │                 │   :3000      │                  │
+│  └──────────────┘                 └──────┬───────┘                  │
+│                                          │ BullMQ                   │
+│                                   ┌──────▼───────┐                  │
+│                                   │ Worker ETL   │                  │
+│                                   │  (Python)    │                  │
+│                                   │   :8000      │                  │
+│                                   └──────┬───────┘                  │
+│                                          │                          │
+│          ┌───────────────┐    ┌──────────┴──────┐   ┌───────────┐  │
+│          │  PostgreSQL   │    │     MinIO        │   │   Redis   │  │
+│          │    :5432      │    │  :9000 / :9001   │   │   :6379   │  │
+│          └───────────────┘    └─────────────────┘   └───────────┘  │
+│                                                                      │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Stack Tecnológico
 
 ### API Gateway (Node.js)
-- **Express 4.21** - Framework web
-- **TypeScript 5.7** - Tipado estático
-- **Prisma 6.4** - ORM para base de datos
-- **BullMQ 5.34** - Productor de cola de trabajos
-- **Zod 3.24** - Validación de esquemas
+- **Express 4.21** — Framework web
+- **TypeScript 5.7** — Tipado estático, arquitectura hexagonal
+- **Prisma 6** — ORM + migraciones (`prisma/migrations/` — 2 migraciones aplicadas)
+- **BullMQ 5.34** — Productor de cola de trabajos
+- **Zod 3.24** — Validación de esquemas
+- **Vitest** — ~337 tests unitarios/integración
 
 ### Worker ETL (Python)
-- **FastAPI 0.115** - Framework web
-- **Polars 1.23** - Procesamiento de datos de alto rendimiento
-- **Pandas 2.2** - Manipulación de datos
-- **BullMQ 2.9** - Consumidor de cola de trabajos (binding Python)
-- **Pydantic 2.10** - Configuración y validación
+- **FastAPI 0.115** — Framework web
+- **Polars 1.23** — Procesamiento de datos de alto rendimiento
+- **Pandas 2.2** — Manipulación de datos
+- **BullMQ 2.9** — Consumidor de cola (binding Python)
+- **Pydantic 2.10** — Configuración y validación
+- **pytest** — 308 tests
+
+### Frontend
+- **Next.js 15** + **NextAuth v5** — App Router, autenticación
+- **Recharts** — Dashboard de analíticas
+- **Vitest** — 197 tests + 4 specs E2E con Playwright
 
 ### Infraestructura
-- **PostgreSQL 16** - Base de datos relacional
-- **Redis 7.4** - Broker de mensajes (BullMQ)
-- **MinIO** - Almacenamiento de objetos compatible con S3
+- **PostgreSQL 15** — Base de datos relacional
+- **Redis 7** — Broker de mensajes (BullMQ)
+- **MinIO** — Almacenamiento de objetos compatible con S3
+- **Docker Compose** — 7 servicios orquestados
 
 ## Funcionalidades Implementadas
 
-✅ **Gestión de Datasets** - CRUD completo con validación  
-✅ **11 Transformaciones** - CLEAN_NULLS, FILL_NULLS, TRIM_WHITESPACE, etc.  
-✅ **4 Formatos** - CSV, Excel (.xlsx), JSON, Parquet (hasta 100MB)  
-✅ **Cola Asíncrona** - BullMQ para procesamiento distribuido  
-✅ **Health Checks** - API y Worker con monitoreo de dependencias  
-✅ **Tests Completos** - 490 tests pasando (91% cobertura)
+- **Autenticación JWT** — NextAuth v5 + Express JWT (registro, login, logout, sesión)
+- **Gestión de Datasets** — Subida CSV/Excel a MinIO, CRUD completo
+- **Transformaciones ETL** — 6 tipos: imputación de nulos, eliminación de outliers, normalización de tipos, deduplicación, formato de fechas, escalado
+- **Human-in-the-Loop (HITL)** — Detección de anomalías → revisión humana → decisión aplicada
+- **Streaming SSE** — Estado de jobs en tiempo real (`GET /jobs/:id/stream`)
+- **Dashboard de analíticas** — Endpoint de stats + visualización con Recharts
+- **Swagger / OpenAPI** — Documentación interactiva en `http://localhost:3000/api/docs`
+- **Stack Docker E2E** — Todos los servicios orquestados con `docker-compose.yml`
+- **Migraciones Prisma** — 2 migraciones aplicadas (tablas `anomalies` + `decisions`)
 
 ## Inicio Rápido
 
 ```bash
-# Iniciar todos los servicios
+# Iniciar todos los servicios (desde backend/)
 make up
 
-# Ver estado
+# Ver logs en tiempo real
+make logs
+
+# Ver estado de los servicios
 make ps
 
-# Ver logs
-make logs
+# Detener todos los servicios
+make down
 ```
 
-## Servicios
+### Ejecutar tests
 
-| Servicio   | URL                       | Descripción              |
-|------------|---------------------------|--------------------------|
-| API        | http://localhost:3000     | API Gateway              |
-| Worker     | http://localhost:8000     | Worker ETL               |
-| MinIO      | http://localhost:9001     | Consola de almacenamiento|
-| PostgreSQL | localhost:5433            | Base de datos            |
-| Redis      | localhost:6380            | Broker de mensajes       |
+```bash
+# API Gateway (~337 tests, Vitest)
+make test-api
+
+# Worker ETL (308 tests, pytest)
+make test-worker
+
+# Con cobertura (manual)
+cd api && pnpm test:coverage
+cd worker && uv run pytest --cov=src --cov-report=html
+```
+
+## Servicios Docker
+
+| Servicio            | URL                           | Descripción                   |
+|---------------------|-------------------------------|-------------------------------|
+| `pymes-frontend`    | http://localhost:3001         | Next.js 15 + NextAuth v5      |
+| `pymes-api`         | http://localhost:3000         | API Gateway (Express)         |
+| `pymes-worker`      | http://localhost:8000         | Worker ETL (FastAPI)          |
+| `pymes-minio`       | http://localhost:9001         | Consola MinIO                 |
+| `pymes-postgres`    | localhost:5432                | PostgreSQL 15                 |
+| `pymes-redis`       | localhost:6379                | Redis 7                       |
+| `pymes-minio-init`  | —                             | Inicializador de buckets (one-shot) |
 
 ## Endpoints Disponibles
 
-### API REST
+Prefijo base: `/api/v1` — Documentación interactiva: `http://localhost:3000/api/docs`
 
-| Método | Endpoint | Descripción |
-|--------|----------|-------------|
-| POST | `/api/v1/datasets` | Subir nuevo dataset |
-| GET | `/api/v1/datasets` | Listar datasets |
-| GET | `/api/v1/datasets/:id` | Obtener dataset por ID |
-| DELETE | `/api/v1/datasets/:id` | Eliminar dataset |
-| POST | `/api/v1/datasets/:id/transform` | Iniciar transformación ETL |
-| GET | `/api/v1/datasets/:id/download` | Obtener URL de descarga |
-| GET | `/api/v1/jobs/:jobId` | Consultar estado de un job |
-| GET | `/health` | Health check |
+### Autenticación (4 endpoints)
 
-### Ejemplo de uso
+| Método | Endpoint             | Descripción                    |
+|--------|----------------------|--------------------------------|
+| POST   | `/auth/register`     | Registrar nuevo usuario        |
+| POST   | `/auth/login`        | Iniciar sesión, retorna JWT    |
+| GET    | `/auth/me`           | Obtener usuario autenticado    |
+| POST   | `/auth/logout`       | Cerrar sesión                  |
 
-```bash
-# Subir dataset
-curl -X POST http://localhost:3000/api/v1/datasets \
-  -H "x-user-id: user123" \
-  -F "name=ventas-2024" \
-  -F "file=@datos.csv"
+### Datasets (4 endpoints)
 
-# Listar datasets
-curl "http://localhost:3000/api/v1/datasets?userId=user123"
+| Método | Endpoint             | Descripción                                          |
+|--------|----------------------|------------------------------------------------------|
+| POST   | `/datasets`          | Subir CSV/Excel a MinIO (multipart/form-data)        |
+| GET    | `/datasets`          | Listar datasets del usuario autenticado (JWT)        |
+| GET    | `/datasets/:id`      | Obtener dataset por ID                               |
+| DELETE | `/datasets/:id`      | Eliminar dataset                                     |
 
-# Iniciar transformación
-curl -X POST http://localhost:3000/api/v1/datasets/cm3abc123/transform \
-  -H "Content-Type: application/json" \
-  -d '{"transformations":[{"type":"TRIM_WHITESPACE","columns":["nombre"]}]}'
+> **Nota:** `GET /datasets` filtra automáticamente por el usuario del JWT. No acepta `?userId=` como parámetro externo (se ignora por seguridad).
 
-# Consultar estado del job
-curl http://localhost:3000/api/v1/jobs/job-id-123
+### Jobs ETL (4 endpoints)
 
-# Obtener URL de descarga
-curl http://localhost:3000/api/v1/datasets/cm3abc123/download
+| Método | Endpoint               | Descripción                          |
+|--------|------------------------|--------------------------------------|
+| POST   | `/jobs`                | Crear y encolar job ETL              |
+| GET    | `/jobs`                | Listar jobs del usuario              |
+| GET    | `/jobs/:id`            | Obtener estado de un job             |
+| GET    | `/jobs/:id/stream`     | Stream SSE de estado en tiempo real  |
+
+### Human-in-the-Loop / Decisiones (2 endpoints)
+
+| Método | Endpoint                  | Descripción                              |
+|--------|---------------------------|------------------------------------------|
+| GET    | `/jobs/:id/anomalies`     | Obtener anomalías detectadas del job     |
+| POST   | `/jobs/:id/decisions`     | Enviar decisiones humanas sobre anomalías|
+
+### Estadísticas (1 endpoint)
+
+| Método | Endpoint   | Descripción                              |
+|--------|------------|------------------------------------------|
+| GET    | `/stats`   | Métricas globales de uso (dashboard)     |
+
+### Health (2 endpoints)
+
+| Método | Endpoint           | Descripción                       |
+|--------|--------------------|-----------------------------------|
+| GET    | `/health`          | Health check básico               |
+| GET    | `/health/detailed` | Health check con estado de dependencias |
+
+## Flujo Human-in-the-Loop (HITL)
+
 ```
+1. Usuario crea un job ETL   →  POST /api/v1/jobs
+2. Worker procesa el dataset →  detecta anomalías automáticamente
+3. Job queda en estado       →  AWAITING_REVIEW
+4. Usuario consulta anomalías→  GET /api/v1/jobs/:id/anomalies
+5. Usuario revisa y decide   →  POST /api/v1/jobs/:id/decisions
+6. Worker aplica decisiones  →  job avanza a COMPLETED
+7. Resultado disponible      →  en MinIO (descarga directa)
+```
+
+El estado del job puede seguirse en tiempo real via SSE: `GET /api/v1/jobs/:id/stream`.
 
 ## Health Checks
 
 ```bash
 # API Gateway
 curl http://localhost:3000/health
+curl http://localhost:3000/health/detailed
 
-# Worker ETL  
+# Worker ETL
 curl http://localhost:8000/health
-curl http://localhost:8000/health/live   # Kubernetes liveness
-curl http://localhost:8000/health/ready  # Kubernetes readiness
 ```
 
-## Tests
+## Desarrollo Local (sin Docker)
 
 ```bash
-# API Tests (240 tests)
-cd api && pnpm test
-
-# Worker Tests (253 tests)  
-cd worker && uv run pytest
-
-# Con cobertura
-cd api && pnpm test:coverage
-cd worker && uv run pytest --cov=src --cov-report=html
-```
-
-## Desarrollo
-
-### Desarrollo Local (sin Docker)
-
-```bash
-# Iniciar solo infraestructura
+# Iniciar solo infraestructura (postgres, redis, minio)
 make up
 
 # Ejecutar API localmente
@@ -167,43 +208,35 @@ make api-dev
 make worker-dev
 ```
 
-### Base de Datos
+## Base de Datos
 
 ```bash
-# Ejecutar migraciones
+# Ejecutar migraciones (ya aplicadas: anomalies + decisions)
 make db-migrate
 
 # Abrir Prisma Studio
 make db-studio
 
-# Resetear base de datos (¡ADVERTENCIA: pérdida de datos!)
+# Resetear base de datos (ADVERTENCIA: pérdida de datos)
 make db-reset
 ```
 
-### Utilidades
+## Utilidades
 
 ```bash
-# CLI de PostgreSQL
-make psql
-
-# CLI de Redis
-make redis-cli
-
-# Instalar dependencias
-make install
-
-# Lint del código
-make lint
-
-# Verificar tipos
-make typecheck
+make psql        # CLI de PostgreSQL
+make redis-cli   # CLI de Redis
+make install     # Instalar dependencias
+make lint        # Lint del código
+make typecheck   # Verificar tipos TypeScript
+make clean       # Eliminar contenedores y volúmenes
 ```
 
 ## Estructura del Proyecto
 
 ```
 backend/
-├── api/                      # API Gateway (Node.js)
+├── api/                      # API Gateway (Node.js + TypeScript)
 │   └── src/
 │       ├── domain/           # Lógica de negocio (núcleo hexagonal)
 │       │   ├── entities/
@@ -218,24 +251,17 @@ backend/
 │           │   ├── middleware/
 │           │   └── routes/
 │           └── persistence/
-├── worker/                   # Worker ETL (Python)
+├── worker/                   # Worker ETL (Python + FastAPI)
 │   └── src/
 │       ├── domain/           # Lógica de negocio (núcleo hexagonal)
-│       │   ├── entities/
-│       │   ├── value_objects/
-│       │   ├── ports/
-│       │   └── errors/
 │       ├── application/      # Casos de uso y DTOs
 │       └── infrastructure/   # Adaptadores (HTTP, Almacenamiento, Cola)
-│           ├── config/
-│           ├── http/
-│           ├── messaging/
-│           └── storage/
-├── prisma/                   # Esquema de BD y migraciones
-├── docker/                   # Configuraciones Docker
+├── prisma/                   # Esquema Prisma + migraciones
+│   └── migrations/           # 2 migraciones aplicadas (anomalies, decisions)
+├── docker/                   # Configuraciones Docker por servicio
 ├── docs/                     # Documentación del proyecto
-├── openspec/                 # Artefactos SDD
-├── docker-compose.yml        # Orquestación de contenedores
+├── openspec/                 # Artefactos SDD (propuestas, specs, diseños)
+├── docker-compose.yml        # Orquestación de 7 servicios
 ├── Makefile                  # Comandos de desarrollo
 └── README.md                 # Este archivo
 ```
@@ -249,36 +275,46 @@ cp .env.example .env
 ```
 
 Variables principales:
-- `POSTGRES_PORT=5433` - Puerto de PostgreSQL (evita conflictos)
-- `REDIS_PORT=6380` - Puerto de Redis (evita conflictos)
-- `API_PORT=3000` - Puerto del API Gateway
-- `WORKER_PORT=8000` - Puerto del Worker ETL
+
+| Variable          | Descripción                          |
+|-------------------|--------------------------------------|
+| `DATABASE_URL`    | Conexión PostgreSQL (Prisma)         |
+| `REDIS_URL`       | Conexión Redis (BullMQ)              |
+| `MINIO_*`         | Credenciales y endpoint MinIO        |
+| `JWT_SECRET`      | Secreto para firma de tokens JWT     |
+| `NEXTAUTH_SECRET` | Secreto para NextAuth v5             |
+| `API_PORT`        | Puerto del API Gateway (default 3000)|
+| `WORKER_PORT`     | Puerto del Worker ETL (default 8000) |
+
+Ver `.env.example` para la lista completa.
 
 ## Decisiones de Arquitectura
 
 Ver `openspec/` para documentos de diseño completos. Decisiones clave:
 
-1. **ADR-001: PostgreSQL + JSONB sobre MongoDB** - Stack simplificado, JSONB maneja necesidades de documentos
-2. **ADR-002: BullMQ para mensajería** - Funciona tanto en Node.js como en Python
-3. **Arquitectura Hexagonal** - Separación limpia entre dominio, aplicación e infraestructura
+1. **ADR-001: PostgreSQL + JSONB sobre MongoDB** — Stack simplificado; JSONB cubre necesidades documentales
+2. **ADR-002: BullMQ para mensajería** — Funciona tanto en Node.js como en Python
+3. **Arquitectura Hexagonal** — Separación limpia entre dominio, aplicación e infraestructura en ambos servicios
+4. **NextAuth v5 + JWT** — Autenticación unificada entre frontend y API
+5. **SSE sobre WebSockets** — Streaming unidireccional suficiente para estado de jobs; menor complejidad
 
 ## Solución de Problemas
 
 ### Conflictos de puertos
-Si los puertos 5432 o 6379 están en uso, el `.env` por defecto usa puertos alternativos (5433, 6380).
+Los puertos por defecto son 5432, 6379, 3000, 8000, 3001. Ajustar en `.env` si hay conflictos locales.
 
 ### Problemas con Docker
 ```bash
 # Eliminar todos los contenedores y volúmenes
 make clean
 
-# Reconstruir imágenes
+# Reconstruir imágenes sin caché
 docker compose build --no-cache
 ```
 
 ### Problemas con Prisma
 ```bash
-# Regenerar cliente
+# Regenerar cliente Prisma
 make db-generate
 
 # Ver estado actual de la BD
@@ -288,17 +324,9 @@ make db-studio
 ## Documentación Adicional
 
 - **Documentación completa del proyecto:** `docs/RESUMEN-PROYECTO.md`
-- **Especificaciones técnicas:** `openspec/` directory  
-- **Decisiones de arquitectura:** Ver ADRs en el documento principal
-- **Catálogo de transformaciones:** 11 transformaciones disponibles en Worker
-
-## Próximos pasos
-
-**Fase 2:** Human-in-the-Loop con IA
-- Autenticación JWT
-- Sugerencias inteligentes de transformaciones  
-- Preview en tiempo real
-- Frontend web con Next.js
+- **Especificaciones técnicas:** `openspec/` directory
+- **Swagger UI (requiere servicios activos):** `http://localhost:3000/api/docs`
+- **Decisiones de arquitectura:** ADRs en `openspec/`
 
 ## Licencia
 

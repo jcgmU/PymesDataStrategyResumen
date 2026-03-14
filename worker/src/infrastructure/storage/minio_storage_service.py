@@ -1,7 +1,15 @@
-"""MinIO/S3 storage service implementation using boto3."""
+"""MinIO/S3 storage service implementation using boto3.
 
+All boto3 calls are synchronous (blocking). To avoid blocking the asyncio
+event loop we run each call in a thread pool via ``asyncio.get_event_loop().
+run_in_executor(None, ...)``.  This is functionally identical to the previous
+implementation but safe for use in async contexts.
+"""
+
+import asyncio
+from functools import partial
 from io import BytesIO
-from typing import BinaryIO
+from typing import Any, BinaryIO
 
 import boto3
 from botocore.config import Config
@@ -16,17 +24,15 @@ class MinioStorageService(StorageService):
 
     def __init__(self, settings: Settings) -> None:
         """Initialize MinIO client.
-        
+
         Args:
             settings: Application settings with MinIO configuration.
         """
         self._settings = settings
-        
-        # Build endpoint URL
+
         protocol = "https" if settings.minio_use_ssl else "http"
         endpoint_url = f"{protocol}://{settings.minio_endpoint}:{settings.minio_port}"
-        
-        # Create boto3 S3 client with MinIO config
+
         self._client = boto3.client(
             "s3",
             endpoint_url=endpoint_url,
@@ -37,11 +43,27 @@ class MinioStorageService(StorageService):
                 s3={"addressing_style": "path"},  # Required for MinIO
             ),
         )
-        
-        # Bucket names
+
         self._bucket_datasets = settings.minio_bucket_datasets
         self._bucket_results = settings.minio_bucket_results
         self._bucket_temp = settings.minio_bucket_temp
+
+    # ------------------------------------------------------------------
+    # Internal helper
+    # ------------------------------------------------------------------
+
+    async def _run(self, func: Any, *args: Any, **kwargs: Any) -> Any:
+        """Run a synchronous boto3 call in the default thread-pool executor.
+
+        This prevents the synchronous network I/O from blocking the asyncio
+        event loop.
+        """
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, partial(func, *args, **kwargs))
+
+    # ------------------------------------------------------------------
+    # Bucket accessors
+    # ------------------------------------------------------------------
 
     @property
     def datasets_bucket(self) -> str:
@@ -58,6 +80,10 @@ class MinioStorageService(StorageService):
         """Get temp bucket name."""
         return self._bucket_temp
 
+    # ------------------------------------------------------------------
+    # StorageService interface
+    # ------------------------------------------------------------------
+
     async def upload_file(
         self,
         bucket: str,
@@ -66,92 +92,61 @@ class MinioStorageService(StorageService):
         content_type: str | None = None,
     ) -> str:
         """Upload a file to storage.
-        
-        Args:
-            bucket: Target bucket name.
-            key: Object key (path) in the bucket.
-            data: File data as binary stream.
-            content_type: Optional MIME type.
-            
-        Returns:
-            The storage path (s3://bucket/key).
+
+        Returns the storage path (s3://bucket/key).
         """
-        extra_args = {}
+        extra_args: dict[str, str] = {}
         if content_type:
             extra_args["ContentType"] = content_type
-        
-        # Read data into bytes if needed
+
         if hasattr(data, "read"):
             content = data.read()
             if isinstance(content, str):
                 content = content.encode("utf-8")
         else:
-            content = data  # type: ignore
-        
-        self._client.put_object(
+            content = data  # type: ignore[assignment]
+
+        await self._run(
+            self._client.put_object,
             Bucket=bucket,
             Key=key,
             Body=content,
             **extra_args,
         )
-        
+
         return f"s3://{bucket}/{key}"
 
     async def download_file(self, bucket: str, key: str) -> bytes:
         """Download a file from storage.
-        
-        Args:
-            bucket: Source bucket name.
-            key: Object key to download.
-            
-        Returns:
-            File contents as bytes.
-            
+
         Raises:
             FileNotFoundError: If the object doesn't exist.
         """
         try:
-            response = self._client.get_object(Bucket=bucket, Key=key)
-            return response["Body"].read()
+            response = await self._run(
+                self._client.get_object, Bucket=bucket, Key=key
+            )
+            # Body.read() is also synchronous — run it in executor too
+            body = response["Body"]
+            return await asyncio.get_event_loop().run_in_executor(None, body.read)
         except ClientError as e:
-            if e.response["Error"]["Code"] == "NoSuchKey":
+            if e.response["Error"]["Code"] in ("NoSuchKey", "404"):
                 raise FileNotFoundError(f"Object not found: {bucket}/{key}") from e
             raise
 
     async def download_file_stream(self, bucket: str, key: str) -> BytesIO:
-        """Download a file as a stream (useful for large files).
-        
-        Args:
-            bucket: Source bucket name.
-            key: Object key to download.
-            
-        Returns:
-            File contents as BytesIO stream.
-        """
+        """Download a file as a BytesIO stream."""
         content = await self.download_file(bucket, key)
         return BytesIO(content)
 
     async def delete_file(self, bucket: str, key: str) -> None:
-        """Delete a file from storage.
-        
-        Args:
-            bucket: Bucket containing the object.
-            key: Object key to delete.
-        """
-        self._client.delete_object(Bucket=bucket, Key=key)
+        """Delete a file from storage."""
+        await self._run(self._client.delete_object, Bucket=bucket, Key=key)
 
     async def file_exists(self, bucket: str, key: str) -> bool:
-        """Check if a file exists in storage.
-        
-        Args:
-            bucket: Bucket to check.
-            key: Object key to check.
-            
-        Returns:
-            True if the object exists, False otherwise.
-        """
+        """Check if a file exists in storage."""
         try:
-            self._client.head_object(Bucket=bucket, Key=key)
+            await self._run(self._client.head_object, Bucket=bucket, Key=key)
             return True
         except ClientError as e:
             if e.response["Error"]["Code"] == "404":
@@ -165,14 +160,9 @@ class MinioStorageService(StorageService):
         expires_in: int = 3600,
     ) -> str:
         """Generate a presigned URL for file access.
-        
-        Args:
-            bucket: Bucket containing the object.
-            key: Object key.
-            expires_in: URL expiration time in seconds.
-            
-        Returns:
-            Presigned URL string.
+
+        Note: generate_presigned_url is a local computation (no network call)
+        so we do not need to offload it to the executor.
         """
         return self._client.generate_presigned_url(
             "get_object",
@@ -186,19 +176,14 @@ class MinioStorageService(StorageService):
         key: str,
     ) -> dict[str, str]:
         """Get object metadata.
-        
-        Args:
-            bucket: Bucket containing the object.
-            key: Object key.
-            
-        Returns:
-            Dictionary of metadata.
-            
+
         Raises:
             FileNotFoundError: If the object doesn't exist.
         """
         try:
-            response = self._client.head_object(Bucket=bucket, Key=key)
+            response = await self._run(
+                self._client.head_object, Bucket=bucket, Key=key
+            )
             return {
                 "content_type": response.get("ContentType", ""),
                 "content_length": str(response.get("ContentLength", 0)),
@@ -216,55 +201,38 @@ class MinioStorageService(StorageService):
         prefix: str = "",
         max_keys: int = 1000,
     ) -> list[dict[str, str]]:
-        """List objects in a bucket with optional prefix filter.
-        
-        Args:
-            bucket: Bucket to list.
-            prefix: Filter objects by key prefix.
-            max_keys: Maximum number of keys to return.
-            
-        Returns:
-            List of object info dictionaries.
-        """
-        response = self._client.list_objects_v2(
+        """List objects in a bucket with optional prefix filter."""
+        response = await self._run(
+            self._client.list_objects_v2,
             Bucket=bucket,
             Prefix=prefix,
             MaxKeys=max_keys,
         )
-        
-        objects = []
-        for obj in response.get("Contents", []):
-            objects.append({
+
+        return [
+            {
                 "key": obj["Key"],
                 "size": str(obj["Size"]),
                 "last_modified": str(obj["LastModified"]),
                 "etag": obj["ETag"].strip('"'),
-            })
-        
-        return objects
+            }
+            for obj in response.get("Contents", [])
+        ]
 
     async def ensure_bucket_exists(self, bucket: str) -> None:
-        """Ensure a bucket exists, creating it if necessary.
-        
-        Args:
-            bucket: Bucket name to ensure exists.
-        """
+        """Ensure a bucket exists, creating it if necessary."""
         try:
-            self._client.head_bucket(Bucket=bucket)
+            await self._run(self._client.head_bucket, Bucket=bucket)
         except ClientError as e:
-            if e.response["Error"]["Code"] == "404":
-                self._client.create_bucket(Bucket=bucket)
+            if e.response["Error"]["Code"] in ("404", "NoSuchBucket"):
+                await self._run(self._client.create_bucket, Bucket=bucket)
             else:
                 raise
 
     async def health_check(self) -> bool:
-        """Check if MinIO is accessible.
-        
-        Returns:
-            True if MinIO is reachable, False otherwise.
-        """
+        """Check if MinIO is accessible."""
         try:
-            self._client.list_buckets()
+            await self._run(self._client.list_buckets)
             return True
         except Exception:
             return False

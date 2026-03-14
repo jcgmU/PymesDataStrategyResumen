@@ -4,6 +4,8 @@ import { DatasetId } from '../../../domain/value-objects/DatasetId.js';
 import { CreateDatasetUseCase } from '../../../application/use-cases/CreateDatasetUseCase.js';
 import { TransformDatasetUseCase } from '../../../application/use-cases/TransformDatasetUseCase.js';
 import { GetDownloadUrlUseCase } from '../../../application/use-cases/GetDownloadUrlUseCase.js';
+import { GetAnomaliesUseCase } from '../../../application/use-cases/GetAnomaliesUseCase.js';
+import { SubmitDecisionsUseCase } from '../../../application/use-cases/SubmitDecisionsUseCase.js';
 import {
   createDatasetSchema,
   isAllowedMimeType,
@@ -59,9 +61,8 @@ export class DatasetController {
 
       const { name, description, metadata } = parseResult.data;
 
-      // Get user ID from auth (for now, use a placeholder)
-      // TODO: Replace with actual auth when implemented
-      const userId = getStringHeader(req.headers['x-user-id'], 'anonymous');
+      // Get user ID from JWT middleware or fallback to x-user-id header (legacy)
+      const userId = req.userId ?? getStringHeader(req.headers['x-user-id'], 'anonymous');
 
       // Execute use case (with job queue for async processing)
       const useCase = new CreateDatasetUseCase(
@@ -152,12 +153,12 @@ export class DatasetController {
    */
   async list(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const userId = req.query['userId'] as string | undefined;
+      const userId = req.userId;
       const limit = Math.min(parseInt(req.query['limit'] as string) || 20, 100);
       const offset = parseInt(req.query['offset'] as string) || 0;
 
       const datasets = await this.container.datasetRepository.findAll({
-        ...(userId !== undefined ? { userId } : {}),
+        userId,
         limit,
         offset,
       });
@@ -254,7 +255,7 @@ export class DatasetController {
       }
 
       const { transformationType, parameters, priority } = parseResult.data;
-      const userId = getStringHeader(req.headers['x-user-id'], 'anonymous');
+      const userId = req.userId ?? getStringHeader(req.headers['x-user-id'], 'anonymous');
 
       const useCase = new TransformDatasetUseCase(
         this.container.datasetRepository,
@@ -316,6 +317,77 @@ export class DatasetController {
           downloadUrl: result.downloadUrl,
           expiresIn: result.expiresIn,
           fileName: result.fileName,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/v1/datasets/:id/anomalies
+   * Get all anomalies for a dataset.
+   */
+  async getAnomalies(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const id = req.params['id'] as string;
+
+      if (!id) {
+        throw new ValidationError('Dataset ID is required', 'id');
+      }
+
+      const useCase = new GetAnomaliesUseCase(
+        this.container.anomalyRepository,
+        this.container.datasetRepository
+      );
+
+      const result = await useCase.execute({ datasetId: id });
+
+      res.json({
+        success: true,
+        data: result.anomalies,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/v1/datasets/:id/decisions
+   * Submit human decisions for anomalies (HITL flow).
+   */
+  async submitDecisions(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const id = req.params['id'] as string;
+
+      if (!id) {
+        throw new ValidationError('Dataset ID is required', 'id');
+      }
+
+      const { decisions } = req.body as { decisions: unknown };
+
+      if (!Array.isArray(decisions)) {
+        throw new ValidationError('decisions must be an array', 'decisions');
+      }
+
+      const userId = req.userId ?? getStringHeader(req.headers['x-user-id'], 'anonymous');
+
+      const useCase = new SubmitDecisionsUseCase(
+        this.container.anomalyRepository,
+        this.container.datasetRepository
+      );
+
+      const result = await useCase.execute({
+        datasetId: id,
+        userId,
+        decisions: decisions as Array<{ anomalyId: string; action: 'APPROVED' | 'CORRECTED' | 'DISCARDED'; correction?: string }>,
+      });
+
+      res.status(201).json({
+        success: true,
+        data: {
+          resolved: result.resolved,
+          results: result.results,
         },
       });
     } catch (error) {

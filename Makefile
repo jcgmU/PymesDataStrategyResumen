@@ -2,7 +2,7 @@
 # PYMES Data Strategy - Development Commands
 # =============================================================================
 
-.PHONY: help up down logs clean restart ps db-migrate db-generate db-studio db-reset api-logs worker-logs redis-cli psql api-dev worker-dev install lint format typecheck test test-api test-worker test-coverage
+.PHONY: help up down logs clean restart ps db-migrate db-generate db-studio db-reset api-logs worker-logs redis-cli psql api-dev worker-dev install lint format typecheck test test-api test-worker test-coverage frontend-logs frontend-dev
 
 # Default target
 help:
@@ -33,8 +33,12 @@ help:
 	@echo "    make db-reset    - Reset database (DATA LOSS!)"
 	@echo ""
 	@echo "  Logs:"
-	@echo "    make api-logs    - Follow API Gateway logs"
-	@echo "    make worker-logs - Follow Worker ETL logs"
+	@echo "    make api-logs      - Follow API Gateway logs"
+	@echo "    make worker-logs   - Follow Worker ETL logs"
+	@echo "    make frontend-logs - Follow Frontend logs"
+	@echo ""
+	@echo "  Frontend:"
+	@echo "    make frontend-dev  - Start Frontend (local dev mode)"
 	@echo ""
 	@echo "  Utilities:"
 	@echo "    make redis-cli   - Open Redis CLI"
@@ -103,6 +107,16 @@ postgres-logs:
 
 minio-logs:
 	docker compose logs -f minio
+
+# -----------------------------------------------------------------------------
+# Frontend
+# -----------------------------------------------------------------------------
+
+frontend-logs:
+	docker compose logs -f frontend
+
+frontend-dev:
+	cd ../frontend && pnpm dev
 
 # -----------------------------------------------------------------------------
 # Database (Prisma)

@@ -39,6 +39,18 @@ class TransformationType(str, Enum):
     # Value mapping
     MAP_VALUES = "MAP_VALUES"  # Map values to other values
 
+    # Date handling
+    NORMALIZE_DATES = "NORMALIZE_DATES"  # Normalize date strings to ISO-8601
+
+    # Type validation (non-casting)
+    VALIDATE_TYPES = "VALIDATE_TYPES"  # Validate column types match expectations
+
+    # Anomaly detection
+    DETECT_OUTLIERS = "DETECT_OUTLIERS"  # Flag or remove statistical outliers
+
+    # Encoding
+    ENCODE_CATEGORICALS = "ENCODE_CATEGORICALS"  # Label or one-hot encode string columns
+
 
 @dataclass
 class TransformationConfig:
@@ -89,6 +101,10 @@ class DataTransformer:
             TransformationType.DROP_COLUMN: self._drop_column,
             TransformationType.FILTER_ROWS: self._filter_rows,
             TransformationType.MAP_VALUES: self._map_values,
+            TransformationType.NORMALIZE_DATES: self._normalize_dates,
+            TransformationType.VALIDATE_TYPES: self._validate_types,
+            TransformationType.DETECT_OUTLIERS: self._detect_outliers,
+            TransformationType.ENCODE_CATEGORICALS: self._encode_categoricals,
         }
 
     def transform(
@@ -476,3 +492,315 @@ class DataTransformer:
             )
         
         return result, columns, {"mapping": mapping, "default": default}
+
+
+    # =========================================================================
+    # New transformations (spec additions)
+    # =========================================================================
+
+    def _normalize_dates(
+        self,
+        df: pl.DataFrame,
+        config: TransformationConfig,
+    ) -> tuple[pl.DataFrame, list[str], dict[str, Any]]:
+        """Normalize date strings to ISO-8601 (YYYY-MM-DD).
+
+        Tries the format supplied in ``params["format"]`` first, then falls
+        back to Polars' built-in "mixed" strptime which handles many common
+        patterns automatically.
+
+        params:
+            format   (optional) strptime format string, e.g. ``"%d/%m/%Y"``
+            strict   (optional, default False) raise on unparseable values
+        """
+        columns = self._get_columns(df, config.columns, dtype_filter=pl.String)
+        fmt: str | None = config.params.get("format")
+        strict: bool = config.params.get("strict", False)
+
+        result = df
+        converted: list[str] = []
+        skipped: list[str] = []
+
+        for col in columns:
+            try:
+                if fmt:
+                    parsed = result[col].str.strptime(
+                        pl.Date,
+                        fmt,
+                        strict=strict,
+                    )
+                else:
+                    # Try ISO-8601 first; fall back to a few common formats.
+                    parsed = None
+                    for attempt_fmt in (
+                        "%Y-%m-%d",
+                        "%d/%m/%Y",
+                        "%m/%d/%Y",
+                        "%d-%m-%Y",
+                        "%Y%m%d",
+                    ):
+                        try:
+                            parsed = result[col].str.strptime(
+                                pl.Date,
+                                attempt_fmt,
+                                strict=True,
+                            )
+                            break
+                        except Exception:
+                            continue
+
+                    if parsed is None:
+                        skipped.append(col)
+                        continue
+
+                # Store back as ISO string so downstream steps remain string-based
+                result = result.with_columns(
+                    parsed.cast(pl.String).alias(col)
+                )
+                converted.append(col)
+            except Exception as exc:
+                if strict:
+                    raise TransformationError(
+                        f"Failed to normalize dates in column '{col}': {exc}"
+                    ) from exc
+                skipped.append(col)
+
+        return result, converted, {
+            "converted": converted,
+            "skipped": skipped,
+            "format_used": fmt or "auto-detect",
+        }
+
+    def _validate_types(
+        self,
+        df: pl.DataFrame,
+        config: TransformationConfig,
+    ) -> tuple[pl.DataFrame, list[str], dict[str, Any]]:
+        """Validate that columns conform to expected types without casting.
+
+        params:
+            expected_types  dict[str, str]  e.g. ``{"age": "int", "name": "str"}``
+            strict          (optional, default False) treat mismatches as errors
+
+        Returns the DataFrame unchanged; validation results are in ``details``.
+        """
+        expected: dict[str, str] = config.params.get("expected_types", {})
+        strict: bool = config.params.get("strict", False)
+
+        if not expected:
+            raise TransformationError(
+                "VALIDATE_TYPES requires 'expected_types' in params"
+            )
+
+        _type_map = {
+            "str": pl.String,
+            "string": pl.String,
+            "int": pl.Int64,
+            "int32": pl.Int32,
+            "int64": pl.Int64,
+            "float": pl.Float64,
+            "float32": pl.Float32,
+            "float64": pl.Float64,
+            "bool": pl.Boolean,
+            "boolean": pl.Boolean,
+            "date": pl.Date,
+            "datetime": pl.Datetime,
+        }
+
+        mismatches: dict[str, dict[str, str]] = {}
+        validated: list[str] = []
+
+        for col, expected_type_str in expected.items():
+            if col not in df.columns:
+                mismatches[col] = {
+                    "expected": expected_type_str,
+                    "actual": "COLUMN_MISSING",
+                }
+                continue
+
+            expected_polars = _type_map.get(expected_type_str.lower())
+            if expected_polars is None:
+                raise TransformationError(
+                    f"Unknown expected type '{expected_type_str}' for column '{col}'"
+                )
+
+            actual_dtype = df[col].dtype
+            # Allow numeric sub-type compatibility (Int32 satisfies "int")
+            compatible = actual_dtype == expected_polars or (
+                expected_polars in (pl.Int64, pl.Int32)
+                and actual_dtype in (pl.Int8, pl.Int16, pl.Int32, pl.Int64,
+                                     pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64)
+            ) or (
+                expected_polars in (pl.Float64, pl.Float32)
+                and actual_dtype in (pl.Float32, pl.Float64)
+            )
+
+            if compatible:
+                validated.append(col)
+            else:
+                mismatches[col] = {
+                    "expected": expected_type_str,
+                    "actual": str(actual_dtype),
+                }
+
+        if mismatches and strict:
+            raise TransformationError(
+                f"Type validation failed: {mismatches}"
+            )
+
+        return df, list(expected.keys()), {
+            "validated": validated,
+            "mismatches": mismatches,
+            "passed": len(mismatches) == 0,
+        }
+
+    def _detect_outliers(
+        self,
+        df: pl.DataFrame,
+        config: TransformationConfig,
+    ) -> tuple[pl.DataFrame, list[str], dict[str, Any]]:
+        """Flag or remove rows where numeric values are statistical outliers.
+
+        Uses the IQR method (Q1 - 1.5*IQR, Q3 + 1.5*IQR) by default, or
+        Z-score if ``params["method"] == "zscore"``.
+
+        params:
+            method          "iqr" (default) | "zscore"
+            threshold       float — for zscore, default 3.0
+            action          "flag" (default) | "remove"
+            flag_column     suffix appended to column name for flag cols,
+                            default "_outlier"
+        """
+        method: str = config.params.get("method", "iqr")
+        zscore_threshold: float = float(config.params.get("threshold", 3.0))
+        action: str = config.params.get("action", "flag")
+        flag_suffix: str = config.params.get("flag_column", "_outlier")
+
+        # Get numeric columns only
+        numeric_dtypes = (
+            pl.Int8, pl.Int16, pl.Int32, pl.Int64,
+            pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64,
+            pl.Float32, pl.Float64,
+        )
+        if config.columns:
+            missing = set(config.columns) - set(df.columns)
+            if missing:
+                raise TransformationError(f"Columns not found: {missing}")
+            columns = [
+                c for c in config.columns
+                if df[c].dtype in numeric_dtypes
+            ]
+        else:
+            columns = [c for c in df.columns if df[c].dtype in numeric_dtypes]
+
+        if not columns:
+            return df, [], {"outlier_counts": {}, "method": method, "action": action}
+
+        result = df
+        outlier_counts: dict[str, int] = {}
+        outlier_mask = pl.Series("_mask", [False] * df.height)
+
+        for col in columns:
+            series = df[col].cast(pl.Float64)
+
+            if method == "iqr":
+                q1 = series.quantile(0.25)
+                q3 = series.quantile(0.75)
+                iqr = q3 - q1  # type: ignore[operator]
+                lower = q1 - 1.5 * iqr  # type: ignore[operator]
+                upper = q3 + 1.5 * iqr  # type: ignore[operator]
+                col_mask = (series < lower) | (series > upper)
+            else:
+                # Z-score
+                mean = series.mean()
+                std = series.std()
+                if std == 0 or std is None:
+                    col_mask = pl.Series("_z", [False] * df.height)
+                else:
+                    z_scores = (series - mean) / std  # type: ignore[operator]
+                    col_mask = z_scores.abs() > zscore_threshold
+
+            outlier_counts[col] = col_mask.sum()  # type: ignore[assignment]
+            outlier_mask = outlier_mask | col_mask
+
+            if action == "flag":
+                result = result.with_columns(
+                    col_mask.alias(f"{col}{flag_suffix}")
+                )
+
+        rows_before = result.height
+        if action == "remove":
+            result = result.filter(~outlier_mask)
+
+        return result, columns, {
+            "method": method,
+            "action": action,
+            "outlier_counts": outlier_counts,
+            "total_outlier_rows": int(outlier_mask.sum()),
+            "rows_removed": rows_before - result.height if action == "remove" else 0,
+        }
+
+    def _encode_categoricals(
+        self,
+        df: pl.DataFrame,
+        config: TransformationConfig,
+    ) -> tuple[pl.DataFrame, list[str], dict[str, Any]]:
+        """Encode categorical string columns as integers or one-hot vectors.
+
+        params:
+            encoding    "label" (default) | "onehot"
+            drop_first  bool (default False) — for onehot, drop first dummy
+                        to avoid multicollinearity
+        """
+        encoding: str = config.params.get("encoding", "label")
+        drop_first: bool = config.params.get("drop_first", False)
+
+        columns = self._get_columns(df, config.columns, dtype_filter=pl.String)
+
+        if not columns:
+            return df, [], {
+                "encoding": encoding,
+                "encoded_columns": [],
+                "new_columns": [],
+            }
+
+        result = df
+        new_columns: list[str] = []
+        category_maps: dict[str, dict[str, int]] = {}
+
+        for col in columns:
+            unique_values = sorted(
+                v for v in result[col].unique().to_list() if v is not None
+            )
+
+            if encoding == "label":
+                mapping = {val: idx for idx, val in enumerate(unique_values)}
+                category_maps[col] = mapping
+
+                # Cast to Categorical so Polars can encode, then to Int32
+                result = result.with_columns(
+                    pl.col(col)
+                    .replace(mapping, default=None)
+                    .cast(pl.Int32)
+                    .alias(col)
+                )
+                new_columns.append(col)
+
+            elif encoding == "onehot":
+                dummies_to_add = unique_values[1:] if drop_first else unique_values
+                for val in dummies_to_add:
+                    dummy_col = f"{col}_{val}"
+                    result = result.with_columns(
+                        (pl.col(col) == val).cast(pl.Int8).alias(dummy_col)
+                    )
+                    new_columns.append(dummy_col)
+                # Drop original column after expansion
+                result = result.drop(col)
+
+        return result, columns, {
+            "encoding": encoding,
+            "drop_first": drop_first,
+            "encoded_columns": columns,
+            "new_columns": new_columns,
+            "category_maps": category_maps if encoding == "label" else {},
+        }

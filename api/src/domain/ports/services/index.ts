@@ -6,3 +6,5 @@ export type {
   UploadResult,
   SignedUrlOptions,
 } from './StorageService.js';
+export type { IJwtService, JwtPayload } from './JwtService.js';
+export type { IPasswordService } from './PasswordService.js';

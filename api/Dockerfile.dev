@@ -18,18 +18,22 @@ COPY api/package.json api/
 # Copy Prisma schema
 COPY prisma/ prisma/
 
-# Install dependencies
-WORKDIR /app/api
+# Install all workspace dependencies from the monorepo root
 RUN pnpm install
 
 # Generate Prisma client
-RUN pnpm exec prisma generate --schema=../prisma/schema.prisma
+RUN pnpm exec prisma generate --schema=prisma/schema.prisma
 
 # Copy API source code
-COPY api/ .
+COPY api/ api/
+
+# Copy entrypoint script
+COPY api/docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
 
 # Expose port
 EXPOSE 3000
 
-# Start development server with hot reload
-CMD ["pnpm", "dev"]
+# Start development server with hot reload via pnpm workspace filter
+ENTRYPOINT ["/docker-entrypoint.sh"]
+CMD ["pnpm", "--filter", "api", "dev"]

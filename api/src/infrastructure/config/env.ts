@@ -28,6 +28,10 @@ const envSchema = z.object({
   MINIO_BUCKET_RESULTS: z.string().default('results'),
   MINIO_BUCKET_TEMP: z.string().default('temp'),
 
+  // JWT
+  JWT_SECRET: z.string().min(1, 'JWT_SECRET is required'),
+  JWT_EXPIRES_IN: z.string().default('7d'),
+
   // Logging
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 });

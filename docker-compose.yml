@@ -108,6 +108,9 @@ services:
       MINIO_BUCKET_RESULTS: ${MINIO_BUCKET_RESULTS:-results}
       MINIO_BUCKET_TEMP: ${MINIO_BUCKET_TEMP:-temp}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-in-production}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      BCRYPT_ROUNDS: ${BCRYPT_ROUNDS:-10}
     volumes:
       - ./api/src:/app/api/src:ro
       - ./prisma:/app/prisma:ro
@@ -116,6 +119,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/health"]
       interval: 30s
@@ -157,16 +162,59 @@ services:
       minio-init:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8000/health"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+    restart: unless-stopped
+
+  # ==========================================================================
+  # FRONTEND - Next.js App Router
+  # ==========================================================================
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile.dev
+    container_name: pymes-frontend
+    ports:
+      - "${FRONTEND_PORT:-3001}:3001"
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 3001
+      INTERNAL_API_URL: http://api:3000
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3001}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-dev-secret-change-in-production}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3000}
+    volumes:
+      - ../frontend/app:/app/app:ro
+      - ../frontend/components:/app/components:ro
+      - ../frontend/hooks:/app/hooks:ro
+      - ../frontend/lib:/app/lib:ro
+      - ../frontend/public:/app/public:ro
+      - ../frontend/services:/app/services:ro
+      - ../frontend/store:/app/store:ro
+      - ../frontend/types:/app/types:ro
+      - ../frontend/auth.ts:/app/auth.ts:ro
+      - ../frontend/auth.config.ts:/app/auth.config.ts:ro
+      - ../frontend/next.config.ts:/app/next.config.ts:ro
+      - ../frontend/middleware.ts:/app/middleware.ts:ro
+      - frontend_node_modules:/app/node_modules
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3001"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     restart: unless-stopped
 
 volumes:
   redis_data:
   postgres_data:
   minio_data:
+  frontend_node_modules:
 
 networks:
   default:

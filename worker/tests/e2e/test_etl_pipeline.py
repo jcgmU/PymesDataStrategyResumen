@@ -9,12 +9,11 @@ These tests verify the full flow:
 6. API can query job status
 
 Note: These tests require all containers to be running.
+Run with: pytest tests/e2e/ --run-e2e
 """
 
 import asyncio
-import json
 import uuid
-from datetime import datetime
 from io import BytesIO
 from typing import Any, Generator
 
@@ -35,6 +34,11 @@ from src.infrastructure.parsers.dataset_parser import DatasetParser
 from src.infrastructure.storage.minio_storage_service import MinioStorageService
 
 
+# ---------------------------------------------------------------------------
+# Container fixtures
+# ---------------------------------------------------------------------------
+
+
 @pytest.fixture(scope="module")
 def minio_container() -> Generator[MinioContainer, None, None]:
     """Create a MinIO container for the test module."""
@@ -47,6 +51,11 @@ def redis_container() -> Generator[RedisContainer, None, None]:
     """Create a Redis container for the test module."""
     with RedisContainer("redis:7-alpine") as container:
         yield container
+
+
+# ---------------------------------------------------------------------------
+# Service fixtures
+# ---------------------------------------------------------------------------
 
 
 @pytest.fixture
@@ -68,8 +77,10 @@ def settings(
         minio_access_key=minio_container.access_key,
         minio_secret_key=minio_container.secret_key,
         minio_use_ssl=False,
-        minio_bucket="test-datasets",
-        minio_processed_bucket="test-processed",
+        # Use field names that actually exist on Settings
+        minio_bucket_datasets="test-datasets",
+        minio_bucket_results="test-processed",
+        minio_bucket_temp="test-temp",
     )
 
 
@@ -78,22 +89,20 @@ async def storage_service(settings: Settings) -> MinioStorageService:
     """Create and initialize storage service with test buckets."""
     storage = MinioStorageService(settings=settings)
 
-    # Create test buckets
-    await storage.create_bucket(settings.minio_bucket)
-    await storage.create_bucket(settings.minio_processed_bucket)
+    # ensure_bucket_exists creates the bucket if it doesn't already exist
+    await storage.ensure_bucket_exists(settings.minio_bucket_datasets)
+    await storage.ensure_bucket_exists(settings.minio_bucket_results)
 
     return storage
 
 
 @pytest.fixture
 def parser() -> DatasetParser:
-    """Create dataset parser."""
     return DatasetParser()
 
 
 @pytest.fixture
 def transformer() -> DataTransformer:
-    """Create data transformer."""
     return DataTransformer()
 
 
@@ -104,12 +113,11 @@ def process_dataset_use_case(
     transformer: DataTransformer,
     settings: Settings,
 ) -> ProcessDatasetUseCase:
-    """Create the ProcessDataset use case."""
     return ProcessDatasetUseCase(
         storage=storage_service,
         parser=parser,
         transformer=transformer,
-        output_bucket=settings.minio_processed_bucket,
+        output_bucket=settings.minio_bucket_results,
     )
 
 
@@ -117,8 +125,26 @@ def process_dataset_use_case(
 def etl_processor(
     process_dataset_use_case: ProcessDatasetUseCase,
 ) -> ETLJobProcessor:
-    """Create the ETL job processor."""
     return ETLJobProcessor(process_dataset=process_dataset_use_case)
+
+
+# ---------------------------------------------------------------------------
+# Helper
+# ---------------------------------------------------------------------------
+
+
+def _source_path(settings: Settings, dataset_id: uuid.UUID, filename: str) -> str:
+    """Return the storage path that process_dataset understands.
+
+    ProcessDatasetUseCase._parse_storage_path splits on the first "/" and
+    treats the first segment as the bucket when it has no ".".
+    """
+    return f"{settings.minio_bucket_datasets}/uploads/{dataset_id}/{filename}"
+
+
+# ---------------------------------------------------------------------------
+# Full pipeline tests
+# ---------------------------------------------------------------------------
 
 
 class TestFullETLPipeline:
@@ -132,10 +158,9 @@ class TestFullETLPipeline:
         settings: Settings,
     ) -> None:
         """Test processing a CSV file with multiple transformations."""
-        # Arrange: Create and upload test CSV
         dataset_id = uuid.uuid4()
         job_id = uuid.uuid4()
-        source_key = f"uploads/{dataset_id}/test_data.csv"
+        object_key = f"uploads/{dataset_id}/test_data.csv"
 
         csv_content = b"""name,email,age,salary,department
 John Doe,JOHN.DOE@EXAMPLE.COM,25,50000,Engineering
@@ -144,48 +169,64 @@ Bob Wilson,BOB.WILSON@EXAMPLE.COM,35,70000,Engineering
 Alice Brown,alice.brown@example.com,28,55000,HR
 """
         await storage_service.upload_file(
-            bucket=settings.minio_bucket,
-            key=source_key,
+            bucket=settings.minio_bucket_datasets,
+            key=object_key,
             data=BytesIO(csv_content),
             content_type="text/csv",
         )
 
-        # Create job data as API would send it
+        # Correct transformation format: type = enum value, columns = list, params = dict
         job_data: dict[str, Any] = {
             "datasetId": str(dataset_id),
             "jobId": str(job_id),
-            "sourceKey": source_key,
+            "sourceKey": _source_path(settings, dataset_id, "test_data.csv"),
             "filename": "test_data.csv",
-            "sourceBucket": settings.minio_bucket,
             "transformations": [
-                {"type": "lowercase", "column": "email"},
-                {"type": "trim", "column": "name"},
-                {"type": "filter", "column": "age", "operator": ">=", "value": 28},
+                {
+                    "type": "LOWERCASE",
+                    "columns": ["email"],
+                    "params": {},
+                },
+                {
+                    "type": "TRIM_WHITESPACE",
+                    "columns": ["name"],
+                    "params": {},
+                },
+                {
+                    "type": "FILTER_ROWS",
+                    "columns": None,
+                    "params": {"column": "age", "operator": "gte", "value": 28},
+                },
             ],
             "outputFormat": "parquet",
         }
 
-        # Act: Process the job
         result = await etl_processor.process(job_data)
 
-        # Assert: Verify result
         assert result["success"] is True
         assert result["datasetId"] == str(dataset_id)
         assert result["jobId"] == str(job_id)
         assert result["outputKey"] is not None
-        assert result["rowsProcessed"] == 3  # Only rows with age >= 28
+        assert result["rowsProcessed"] == 3  # age >= 28: Jane(30), Bob(35), Alice(28)
         assert result["columnsCount"] == 5
-        assert "preview" in result
-        assert "schema" in result
 
-        # Verify transformations were applied
+        # schema is dict[str, str] — column_name -> dtype_string
+        schema = result["schema"]
+        assert isinstance(schema, dict)
+        assert "email" in schema
+        assert "name" in schema
+
+        # preview is list[dict]
+        assert isinstance(result["preview"], list)
+
+        # Verify transformations
         transformation_results = result["transformationResults"]
         assert len(transformation_results) == 3
         assert all(r["success"] for r in transformation_results)
 
         # Verify output file exists in MinIO
         output_exists = await storage_service.file_exists(
-            bucket=settings.minio_processed_bucket,
+            bucket=settings.minio_bucket_results,
             key=result["outputKey"],
         )
         assert output_exists is True
@@ -197,13 +238,11 @@ Alice Brown,alice.brown@example.com,28,55000,HR
         etl_processor: ETLJobProcessor,
         settings: Settings,
     ) -> None:
-        """Test processing an Excel file."""
-        # Arrange: Create and upload test Excel file
+        """Test processing an Excel file without transformations."""
         dataset_id = uuid.uuid4()
         job_id = uuid.uuid4()
-        source_key = f"uploads/{dataset_id}/test_data.xlsx"
+        object_key = f"uploads/{dataset_id}/test_data.xlsx"
 
-        # Create Excel file in memory
         df = pl.DataFrame(
             {
                 "product": ["Widget A", "Widget B", "Gadget X"],
@@ -217,27 +256,23 @@ Alice Brown,alice.brown@example.com,28,55000,HR
         excel_buffer.seek(0)
 
         await storage_service.upload_file(
-            bucket=settings.minio_bucket,
-            key=source_key,
+            bucket=settings.minio_bucket_datasets,
+            key=object_key,
             data=excel_buffer,
             content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
-        # Create job data
         job_data: dict[str, Any] = {
             "datasetId": str(dataset_id),
             "jobId": str(job_id),
-            "sourceKey": source_key,
+            "sourceKey": _source_path(settings, dataset_id, "test_data.xlsx"),
             "filename": "test_data.xlsx",
-            "sourceBucket": settings.minio_bucket,
             "transformations": [],
             "outputFormat": "csv",
         }
 
-        # Act: Process the job
         result = await etl_processor.process(job_data)
 
-        # Assert
         assert result["success"] is True
         assert result["rowsProcessed"] == 3
         assert result["columnsCount"] == 3
@@ -250,18 +285,17 @@ Alice Brown,alice.brown@example.com,28,55000,HR
         settings: Settings,
     ) -> None:
         """Test processing with column rename transformations."""
-        # Arrange
         dataset_id = uuid.uuid4()
         job_id = uuid.uuid4()
-        source_key = f"uploads/{dataset_id}/rename_test.csv"
+        object_key = f"uploads/{dataset_id}/rename_test.csv"
 
         csv_content = b"""old_name,old_value
 test1,100
 test2,200
 """
         await storage_service.upload_file(
-            bucket=settings.minio_bucket,
-            key=source_key,
+            bucket=settings.minio_bucket_datasets,
+            key=object_key,
             data=BytesIO(csv_content),
             content_type="text/csv",
         )
@@ -269,30 +303,30 @@ test2,200
         job_data: dict[str, Any] = {
             "datasetId": str(dataset_id),
             "jobId": str(job_id),
-            "sourceKey": source_key,
+            "sourceKey": _source_path(settings, dataset_id, "rename_test.csv"),
             "filename": "rename_test.csv",
-            "sourceBucket": settings.minio_bucket,
             "transformations": [
-                {"type": "rename", "column": "old_name", "newName": "new_name"},
-                {"type": "rename", "column": "old_value", "newName": "new_value"},
+                {
+                    "type": "RENAME_COLUMN",
+                    "columns": None,
+                    "params": {"mapping": {"old_name": "new_name", "old_value": "new_value"}},
+                },
             ],
             "outputFormat": "json",
         }
 
-        # Act
         result = await etl_processor.process(job_data)
 
-        # Assert
         assert result["success"] is True
         assert result["rowsProcessed"] == 2
 
-        # Verify the schema shows renamed columns
+        # schema is dict[str, str] — keys are column names
         schema = result["schema"]
-        column_names = [col["name"] for col in schema]
-        assert "new_name" in column_names
-        assert "new_value" in column_names
-        assert "old_name" not in column_names
-        assert "old_value" not in column_names
+        assert isinstance(schema, dict)
+        assert "new_name" in schema
+        assert "new_value" in schema
+        assert "old_name" not in schema
+        assert "old_value" not in schema
 
     @pytest.mark.asyncio
     async def test_process_with_fill_null(
@@ -301,11 +335,10 @@ test2,200
         etl_processor: ETLJobProcessor,
         settings: Settings,
     ) -> None:
-        """Test processing with fill_null transformation."""
-        # Arrange
+        """Test processing with FILL_NULLS transformation."""
         dataset_id = uuid.uuid4()
         job_id = uuid.uuid4()
-        source_key = f"uploads/{dataset_id}/null_test.csv"
+        object_key = f"uploads/{dataset_id}/null_test.csv"
 
         csv_content = b"""name,value
 test1,100
@@ -313,8 +346,8 @@ test2,
 test3,300
 """
         await storage_service.upload_file(
-            bucket=settings.minio_bucket,
-            key=source_key,
+            bucket=settings.minio_bucket_datasets,
+            key=object_key,
             data=BytesIO(csv_content),
             content_type="text/csv",
         )
@@ -322,19 +355,20 @@ test3,300
         job_data: dict[str, Any] = {
             "datasetId": str(dataset_id),
             "jobId": str(job_id),
-            "sourceKey": source_key,
+            "sourceKey": _source_path(settings, dataset_id, "null_test.csv"),
             "filename": "null_test.csv",
-            "sourceBucket": settings.minio_bucket,
             "transformations": [
-                {"type": "fill_null", "column": "value", "fillValue": "0"},
+                {
+                    "type": "FILL_NULLS",
+                    "columns": ["value"],
+                    "params": {"value": "0", "strategy": "literal"},
+                },
             ],
             "outputFormat": "json",
         }
 
-        # Act
         result = await etl_processor.process(job_data)
 
-        # Assert
         assert result["success"] is True
         assert result["rowsProcessed"] == 3
 
@@ -350,24 +384,29 @@ test3,300
         etl_processor: ETLJobProcessor,
         settings: Settings,
     ) -> None:
-        """Test that job fails gracefully with invalid/missing file."""
-        # Arrange: Don't upload any file
+        """Test that job fails gracefully when source file is missing."""
         dataset_id = uuid.uuid4()
         job_id = uuid.uuid4()
 
         job_data: dict[str, Any] = {
             "datasetId": str(dataset_id),
             "jobId": str(job_id),
-            "sourceKey": "nonexistent/file.csv",
+            # Note: bucket exists but object does not
+            "sourceKey": f"{settings.minio_bucket_datasets}/nonexistent/file.csv",
             "filename": "file.csv",
-            "sourceBucket": settings.minio_bucket,
             "transformations": [],
             "outputFormat": "parquet",
         }
 
-        # Act & Assert: Should raise exception for missing file
+        # The use case catches all exceptions and returns success=False,
+        # but ETLJobProcessor re-raises — either is acceptable.
         with pytest.raises(Exception):
             await etl_processor.process(job_data)
+
+
+# ---------------------------------------------------------------------------
+# Worker integration
+# ---------------------------------------------------------------------------
 
 
 class TestWorkerIntegration:
@@ -384,7 +423,6 @@ class TestWorkerIntegration:
         """Test that worker picks up and processes a job from Redis queue."""
         from bullmq import Queue
 
-        # Arrange: Create worker
         worker = BullMQWorkerService(
             redis_host=settings.redis_host,
             redis_port=settings.redis_port,
@@ -393,10 +431,8 @@ class TestWorkerIntegration:
         )
         worker.set_processor(etl_processor)
 
-        # Start worker
         await worker.start()
 
-        # Create queue to enqueue job
         queue = Queue(
             name="test-etl-queue",
             opts={
@@ -407,49 +443,37 @@ class TestWorkerIntegration:
             },
         )
 
-        # Upload test file
         dataset_id = uuid.uuid4()
         job_id = uuid.uuid4()
-        source_key = f"uploads/{dataset_id}/worker_test.csv"
+        object_key = f"uploads/{dataset_id}/worker_test.csv"
 
         csv_content = b"""id,value
 1,100
 2,200
 """
         await storage_service.upload_file(
-            bucket=settings.minio_bucket,
-            key=source_key,
+            bucket=settings.minio_bucket_datasets,
+            key=object_key,
             data=BytesIO(csv_content),
             content_type="text/csv",
         )
 
-        # Enqueue job
-        job_data = {
+        job_payload = {
             "datasetId": str(dataset_id),
             "jobId": str(job_id),
-            "sourceKey": source_key,
+            "sourceKey": f"{settings.minio_bucket_datasets}/{object_key}",
             "filename": "worker_test.csv",
-            "sourceBucket": settings.minio_bucket,
             "transformations": [],
             "outputFormat": "parquet",
         }
 
-        await queue.add("process-dataset", job_data, opts={"jobId": str(job_id)})
+        await queue.add("process-dataset", job_payload, opts={"jobId": str(job_id)})
 
-        # Wait for job to be processed (with timeout)
+        # Give the worker time to pick up the job
         await asyncio.sleep(2)
 
-        # Cleanup
         await worker.stop()
         await queue.close()
 
-        # Assert: Verify output file was created
-        output_key = f"{dataset_id}/{job_id}.parquet"
-        output_exists = await storage_service.file_exists(
-            bucket=settings.minio_processed_bucket,
-            key=output_key,
-        )
-
-        # Note: This test is a bit flaky due to timing, so we just verify
-        # the worker started and stopped without errors
+        # Verify worker lifecycle completed without errors
         assert worker.is_running is False
