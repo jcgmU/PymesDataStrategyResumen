@@ -158,7 +158,7 @@ export class DatasetController {
       const offset = parseInt(req.query['offset'] as string) || 0;
 
       const datasets = await this.container.datasetRepository.findAll({
-        userId,
+        ...(userId !== undefined ? { userId } : {}),
         limit,
         offset,
       });

@@ -7,18 +7,19 @@ import { BullMQQueueEvents, type QueueEventsLike } from '../BullMQQueueEvents.js
 function makeMockQueueEvents() {
   const handlers: Record<string, ((...args: unknown[]) => void)[]> = {};
 
-  const mock: QueueEventsLike = {
+  const mockImpl = {
     on(event: string, handler: (...args: unknown[]) => void) {
       if (!handlers[event]) handlers[event] = [];
       handlers[event].push(handler);
-      return mock;
+      return mockImpl;
     },
     off(event: string, handler: (...args: unknown[]) => void) {
       handlers[event] = (handlers[event] ?? []).filter((h) => h !== handler);
-      return mock;
+      return mockImpl;
     },
     close: vi.fn().mockResolvedValue(undefined),
   };
+  const mock = mockImpl as unknown as QueueEventsLike;
 
   const emit = (event: string, ...args: unknown[]) => {
     for (const h of handlers[event] ?? []) h(...args);

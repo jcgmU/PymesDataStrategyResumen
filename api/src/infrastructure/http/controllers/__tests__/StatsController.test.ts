@@ -82,14 +82,16 @@ describe('StatsController', () => {
         mockNext
       );
 
-      const jsonArg = vi.mocked(mockRes.json).mock.calls[0]?.[0] as {
-        success: boolean;
-        data: Stats;
-      };
-      expect(jsonArg.success).toBe(true);
-      expect(jsonArg.data.totalDatasets).toBe(5);
-      expect(jsonArg.data.jobsCompleted).toBe(3);
-      expect(jsonArg.data.avgProcessingTimeMs).toBe(2000);
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: true,
+          data: expect.objectContaining({
+            totalDatasets: 5,
+            jobsCompleted: 3,
+            avgProcessingTimeMs: 2000,
+          }),
+        })
+      );
     });
 
     it('should call next with error when repository throws', async () => {
@@ -128,11 +130,14 @@ describe('StatsController', () => {
       );
 
       expect(mockRes.status).toHaveBeenCalledWith(200);
-      const jsonArg = vi.mocked(mockRes.json).mock.calls[0]?.[0] as {
-        data: Stats;
-      };
-      expect(jsonArg.data.totalDatasets).toBe(0);
-      expect(jsonArg.data.avgProcessingTimeMs).toBe(0);
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            totalDatasets: 0,
+            avgProcessingTimeMs: 0,
+          }),
+        })
+      );
     });
   });
 });
