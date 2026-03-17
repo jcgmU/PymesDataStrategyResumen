@@ -15,7 +15,7 @@ from src.infrastructure.messaging.bullmq_worker import BullMQWorkerService
 
 
 # Global task reference
-_worker_task: asyncio.Task | None = None
+_worker_task: asyncio.Task[None] | None = None
 
 
 @asynccontextmanager

@@ -382,10 +382,12 @@ class ProcessDatasetUseCase:
             std = series.std()
             if std is None or std == 0:
                 continue
+            mean_f = float(mean)  # type: ignore[arg-type]
+            std_f = float(std)  # type: ignore[arg-type]
             for row_idx, val in enumerate(df[col].to_list()):
                 if val is None:
                     continue
-                z = abs((float(val) - mean) / std)  # type: ignore[arg-type]
+                z = abs((float(val) - mean_f) / std_f)
                 if z > 3.0:
                     anomalies.append(
                         AnomalyEntity.create(
@@ -491,7 +493,7 @@ class ProcessDatasetUseCase:
         self,
         job_id: str,
         status: JobStatus,
-        result: dict | None = None,
+        result: dict[str, object] | None = None,
         error: str | None = None,
     ) -> None:
         """Update job status if repository is available."""

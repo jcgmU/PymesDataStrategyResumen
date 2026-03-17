@@ -113,11 +113,7 @@ class Container:
 
     async def close(self) -> None:
         """Close all connections."""
-        try:
-            await self.redis_client.aclose()
-        except AttributeError:
-            # Fallback for older redis versions
-            await self.redis_client.close()
+        await self.redis_client.close()
         # Close the DB engine if it was initialized
         if self._db_engine is not None:
             await self._db_engine.dispose()

@@ -551,9 +551,10 @@ class DataTransformer:
                         continue
 
                 # Store back as ISO string so downstream steps remain string-based
-                result = result.with_columns(
-                    parsed.cast(pl.String).alias(col)
-                )
+                if parsed is not None:
+                    result = result.with_columns(
+                        parsed.cast(pl.String).alias(col)
+                    )
                 converted.append(col)
             except Exception as exc:
                 if strict:
@@ -714,7 +715,7 @@ class DataTransformer:
                 if std == 0 or std is None:
                     col_mask = pl.Series("_z", [False] * df.height)
                 else:
-                    z_scores = (series - mean) / std  # type: ignore[operator]
+                    z_scores = (series - mean) / std
                     col_mask = z_scores.abs() > zscore_threshold
 
             outlier_counts[col] = col_mask.sum()  # type: ignore[assignment]

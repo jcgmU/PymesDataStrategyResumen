@@ -169,11 +169,12 @@ class DatasetParser:
         if self._excel_sheet_name is not None:
             kwargs["sheet_name"] = self._excel_sheet_name
 
-        return pl.read_excel(
+        result: pl.DataFrame = pl.read_excel(
             BytesIO(data),
             infer_schema_length=10000,
             **kwargs,
         )
+        return result
 
     def _parse_json(self, data: bytes) -> pl.DataFrame:
         """Parse JSON data."""

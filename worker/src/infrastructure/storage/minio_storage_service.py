@@ -164,11 +164,12 @@ class MinioStorageService(StorageService):
         Note: generate_presigned_url is a local computation (no network call)
         so we do not need to offload it to the executor.
         """
-        return self._client.generate_presigned_url(
+        url: str = self._client.generate_presigned_url(
             "get_object",
             Params={"Bucket": bucket, "Key": key},
             ExpiresIn=expires_in,
         )
+        return url
 
     async def get_object_metadata(
         self,

@@ -127,7 +127,7 @@ class SQLAlchemyJobRepository(JobRepository):
         self,
         job_id: str,
         status: JobStatus,
-        result: dict | None = None,
+        result: dict[str, object] | None = None,
         error: str | None = None,
     ) -> None:
         """Persist a new status and optional result/error."""

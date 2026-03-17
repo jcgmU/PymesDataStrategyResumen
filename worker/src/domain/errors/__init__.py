@@ -16,10 +16,10 @@ from __future__ import annotations
 class WorkerError(Exception):
     """Base class for all worker domain errors."""
 
-    def __init__(self, message: str, *, context: dict | None = None) -> None:
+    def __init__(self, message: str, *, context: dict[str, object] | None = None) -> None:
         super().__init__(message)
         self.message = message
-        self.context: dict = context or {}
+        self.context: dict[str, object] = context or {}
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self.message!r})"
