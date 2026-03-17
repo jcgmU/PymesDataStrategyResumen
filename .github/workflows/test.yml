@@ -31,6 +31,10 @@ jobs:
         working-directory: api
         run: pnpm install --frozen-lockfile
 
+      - name: Generate Prisma Client
+        working-directory: api
+        run: pnpm prisma generate --schema ../prisma/schema.prisma
+
       - name: Run tests
         working-directory: api
         run: pnpm test
@@ -95,6 +99,10 @@ jobs:
       - name: Install API dependencies
         working-directory: api
         run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma Client
+        working-directory: api
+        run: pnpm prisma generate --schema ../prisma/schema.prisma
 
       - name: Install Worker dependencies
         working-directory: worker
