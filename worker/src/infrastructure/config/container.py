@@ -113,7 +113,7 @@ class Container:
 
     async def close(self) -> None:
         """Close all connections."""
-        await self.redis_client.close()
+        await self.redis_client.aclose()  # type: ignore[attr-defined]
         # Close the DB engine if it was initialized
         if self._db_engine is not None:
             await self._db_engine.dispose()
