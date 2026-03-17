@@ -81,9 +81,13 @@ select = [
     "RUF",   # ruff-specific rules
 ]
 ignore = [
-    "E501",  # line too long (handled by formatter)
-    "B008",  # do not perform function calls in argument defaults (FastAPI Depends)
-    "B904",  # raise without from (sometimes intentional)
+    "E501",    # line too long (handled by formatter)
+    "B008",    # do not perform function calls in argument defaults (FastAPI Depends)
+    "B904",    # raise without from (sometimes intentional)
+    "ARG001",  # unused function argument (FastAPI lifespan app param)
+    "ARG002",  # unused method argument (BullMQ token param, required by interface)
+    "SIM108",  # ternary operator (readability preference)
+    "RUF012",  # mutable class attribute (ClassVar not required for this project)
 ]
 
 [tool.ruff.lint.isort]

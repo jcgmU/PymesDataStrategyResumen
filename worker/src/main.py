@@ -11,7 +11,7 @@ app = create_app()
 if __name__ == "__main__":
     settings = get_settings()
 
-    print(f"PYMES Worker ETL starting...")
+    print("PYMES Worker ETL starting...")
     print(f"Environment: {settings.environment}")
     print(f"Log level: {settings.log_level}")
     print(f"Health check: http://localhost:{settings.port}/health")

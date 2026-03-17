@@ -1,9 +1,9 @@
 """Dataset parser using Polars for CSV, Excel, and JSON files."""
 
-from enum import Enum
+from enum import StrEnum
 from io import BytesIO
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import polars as pl
 import structlog
@@ -12,7 +12,7 @@ import structlog
 logger = structlog.get_logger("pymes.worker.parser")
 
 
-class FileFormat(str, Enum):
+class FileFormat(StrEnum):
     """Supported file formats."""
 
     CSV = "csv"
@@ -48,7 +48,7 @@ class DatasetParser:
     """
 
     # Map file extensions to formats
-    EXTENSION_MAP: dict[str, FileFormat] = {
+    EXTENSION_MAP: ClassVar[dict[str, FileFormat]] = {
         ".csv": FileFormat.CSV,
         ".xlsx": FileFormat.EXCEL,
         ".xls": FileFormat.EXCEL_XLS,

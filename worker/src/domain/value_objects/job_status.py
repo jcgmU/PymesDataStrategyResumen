@@ -1,9 +1,9 @@
 """Job status enumeration."""
 
-from enum import Enum
+from enum import StrEnum
 
 
-class JobStatus(str, Enum):
+class JobStatus(StrEnum):
     """Status of a transformation job."""
 
     PENDING = "pending"
@@ -15,7 +15,7 @@ class JobStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
-class TransformationType(str, Enum):
+class TransformationType(StrEnum):
     """Type of transformation to apply."""
 
     CLEAN = "clean"

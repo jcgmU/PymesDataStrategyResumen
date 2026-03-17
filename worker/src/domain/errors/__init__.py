@@ -182,23 +182,17 @@ class ConfigurationError(WorkerError):
 
 
 __all__ = [
-    # Base
-    "WorkerError",
-    # Storage
-    "StorageError",
-    "ObjectNotFoundError",
     "BucketNotFoundError",
-    # Parsing
-    "ParsingError",
-    "UnsupportedFormatError",
-    # Transformation
-    "TransformationError",
-    "UnknownTransformationError",
     "ColumnNotFoundError",
-    # Job
+    "ConfigurationError",
+    "InvalidJobDataError",
     "JobError",
     "JobNotFoundError",
-    "InvalidJobDataError",
-    # Config
-    "ConfigurationError",
+    "ObjectNotFoundError",
+    "ParsingError",
+    "StorageError",
+    "TransformationError",
+    "UnknownTransformationError",
+    "UnsupportedFormatError",
+    "WorkerError",
 ]

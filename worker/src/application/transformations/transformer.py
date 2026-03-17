@@ -1,7 +1,7 @@
 """Data transformation operations using Polars."""
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 import polars as pl
@@ -11,7 +11,7 @@ import structlog
 logger = structlog.get_logger("pymes.worker.transformer")
 
 
-class TransformationType(str, Enum):
+class TransformationType(StrEnum):
     """Available transformation types."""
 
     # Null handling
@@ -349,10 +349,7 @@ class DataTransformer:
         columns = config.columns  # None means all columns
         keep = config.params.get("keep", "first")  # first, last, none
 
-        if columns:
-            result = df.unique(subset=columns, keep=keep)
-        else:
-            result = df.unique(keep=keep)
+        result = df.unique(subset=columns, keep=keep) if columns else df.unique(keep=keep)
 
         duplicates_removed = df.height - result.height
 

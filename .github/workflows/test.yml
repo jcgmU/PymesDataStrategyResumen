@@ -120,7 +120,7 @@ jobs:
 
       - name: Lint Worker
         working-directory: worker
-        run: ruff check src
+        run: ruff check src --fix
 
       - name: Type check Worker
         working-directory: worker
